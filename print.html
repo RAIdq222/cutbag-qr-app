@@ -54,14 +54,12 @@
 const get = k => { try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } };
 function qrSvg(text){ const q = qrcode(0,'M'); q.addData(text); q.make(); return q.createSvgTag({cellSize:4, margin:2, scalable:true}); }
 let data = null, pjName = '';
-// まだどのカットにも紐づいていない予備のQR（読み取ると「カット袋の登録」になる）。どのPJでも使える
-const SPARE_QR = ['QS4K8TA','QS7M2PD','QS9R3XE','QS2V6NH','QS5W8JL','QS3B9QM','QS6C1ZR','QS8F4YU'];
 function spareCard(token){
   return `<div class="card spare">
       <span class="spare-tag">予備（未登録）</span>
       <div class="title"><div><span class="lbl">タイトル</span><b>-</b></div><div class="ep"><span class="lbl">話数</span><b>-</b></div></div>
       <div class="meta"><span class="cut">CUT<b>-</b></span><span class="time">TIME<b>-</b></span></div>
-      <div class="qr">${qrSvg('CUTBAG:'+token)}</div>
+      <div class="qr">${qrSvg(qrText(token))}</div>
       <div class="id">&nbsp;<small>${esc(token)}</small></div>
     </div>`;
 }
@@ -75,7 +73,7 @@ function render(){
       ${q.status==='revoked' ? '<span class="old">旧ラベル</span>' : ''}
       <div class="title"><div><span class="lbl">タイトル</span><b>サンプル作品</b></div><div class="ep"><span class="lbl">話数</span><b>${esc(String(c.ep).replace('#','').replace(/^0+/,''))}</b></div></div>
       <div class="meta"><span class="cut">CUT<b>${esc(String(Number(c.no.slice(1))))}</b></span><span class="time">TIME<b>${esc(c.sec)}</b></span></div>
-      <div class="qr">${qrSvg('CUTBAG:'+q.token)}</div>
+      <div class="qr">${qrSvg(qrText(q.token))}</div>
       <div class="id">${esc(c.ep)} ${esc(c.no)}<small>${esc(q.token)}</small></div>
     </div>`);
   const used = new Set(data.qrs.map(q=>q.token));
@@ -88,6 +86,8 @@ function render(){
 }
 async function boot(){
   // アプリで今使っているPJのQRを印刷する
+  // ?seed=1 のときは、スプレッドシートを読まずにデモの初期データで印刷する（kit の PDF を作るとき）
+  if(/[?&]seed=1/.test(location.search)){ seed(); data = {cuts:S.cuts, qrs:S.qrs}; render(); return; }
   const cfg = get('cutbagqr.cfg') || {};
   let projects = [];
   try{ const r = await fetch('config.json', {cache:'no-store'}); if(r.ok) projects = ((await r.json()).projects || []).filter(p=>p && p.endpoint); }catch(e){}

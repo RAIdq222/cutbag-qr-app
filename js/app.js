@@ -20,7 +20,9 @@ function withS(s, fn){ const keep = S; S = s; try{ return fn(); } finally { S = 
 async function api(p, action, payload={}){
   if(!p.endpoint) throw new Error('書き込み先が設定されていません');
   const res = await fetch(p.endpoint, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({action, key:p.key||'', ...payload}), redirect:'follow'});
-  const j = await res.json();
+  // Google 側の転送先が、ときどきエラーのページや doGet の返事を返す。そのときは届いていない扱いにして、送り直す
+  let j = null; try{ j = JSON.parse(await res.text()); }catch(e){}
+  if(!j || (j.action ? j.action!==action : 'message' in j) || (action==='load' && j.ok && !j.data)) throw new Error('スプレッドシートから返事がありませんでした');
   if(!j.ok) throw new Error(j.error || '書き込みに失敗しました');
   return j;
 }
@@ -233,7 +235,7 @@ function appAction(a, t){
     sync();
     const item = {cutNo:c.no, text: old ? 'QRを付け替えました' : 'カット袋を登録しました', kind:'reg'};
     if(resume && !moved){ resume.items.push(item); ui = {screen:'scanner', scan:resume}; }
-    else ui = {screen:'scanner', scan:{items:[item]}};
+    else ui = {screen:'scanner', scan:{items:[item], seen:new Set([r.token])}};
     feedback(true); renderPhone(); return true;
   }
   if(a==='scan'){ unlockAudio(); return false; }
@@ -251,12 +253,25 @@ document.addEventListener('click', e=>{
 }, true);
 
 /* ---------- カメラでQRコードを読む ---------- */
-const cam = {stream:null, raf:0, busy:false, err:'', last:{}, t:0, detector:null, canvas:null};
+const cam = {stream:null, raf:0, busy:false, err:'', note:'', t:0, detector:null, canvas:null};
 function camMsg(){
   if(ui.scanning) return '読み取り中…';
   if(cam.err) return esc(cam.err);
   if(!cam.stream) return 'カメラを起動しています…';
+  if(cam.note) return esc(cam.note);
   return '';
+}
+// カメラの枠の中の文字だけを書き換える（読み取りの一覧は描き直さない）
+function showCamMsg(){
+  const f = document.querySelector('.finder'); if(!f) return;
+  let el = f.querySelector('.ftext'); const m = camMsg();
+  if(!m){ if(el) el.remove(); return; }
+  if(!el){ el = document.createElement('span'); el.className = 'ftext'; f.appendChild(el); }
+  el.innerHTML = m;
+}
+function camNote(msg){
+  cam.note = msg; showCamMsg();
+  clearTimeout(cam.noteT); cam.noteT = setTimeout(()=>{ cam.note = ''; showCamMsg(); }, 2000);
 }
 function afterRender(){
   if(ui.screen==='scanner') camStart(); else camStop();
@@ -273,12 +288,12 @@ async function camStart(){
     attachCam(); loop();
   }catch(err){ cam.err = err.name==='NotAllowedError' ? 'カメラの使用が許可されていません。ブラウザの設定で許可してください' : (err.message || 'カメラを起動できません'); }
   cam.starting = false;
-  if(ui.screen==='scanner'){ const f=document.querySelector('.finder .ftext'); if(f) f.textContent = camMsg(); else if(cam.err) renderPhone(); }
+  if(ui.screen==='scanner') showCamMsg();
 }
 function attachCam(){
   const v = $('#cam'); if(!v || !cam.stream) return;
   if(v.srcObject !== cam.stream){ v.srcObject = cam.stream; v.play().catch(()=>{}); }
-  const f = document.querySelector('.finder .ftext'); if(f && !camMsg()) f.remove();
+  showCamMsg();
 }
 function camStop(){
   if(cam.stream){ cam.stream.getTracks().forEach(t=>t.stop()); cam.stream = null; }
@@ -302,8 +317,8 @@ function loop(){
   const code = jsQR(ctx.getImageData(0, 0, w, h).data, w, h, {inversionAttempts:'dontInvert'});
   if(code && code.data) onCode(code.data);
 }
-// QRの中身は「CUTBAG:ID」。ID だけのものも読む
-const tokenOfText = t => String(t||'').trim().replace(/^CUTBAG:/i, '');
+// 1回の読み取り（「QRコード読み取り」から「完了」まで）で読んだカット袋。同じカット袋は1回だけ登録する
+const seenOf = sc => (sc.seen = sc.seen || new Set());
 // 読み取ったIDが、どの担当PJのものかを探す（今のPJから）
 function findProjectOf(token){
   const order = [cfg.current, ...cfg.projects.map(p=>p.id).filter(id=>id!==cfg.current)];
@@ -311,20 +326,23 @@ function findProjectOf(token){
   return null;
 }
 async function onCode(text){
-  const token = tokenOfText(text), now = Date.now();
-  if(!token) return;
-  if(cam.last[token] && now - cam.last[token] < 3000) return;   // 同じQRを続けて読まない
-  cam.last[token] = now;
+  if(cam.busy || ui.screen!=='scanner' || !ui.scan) return;
+  // カット袋のQR（CUTBAG:＋確認用の文字の合うID）だけを読む。ほかのQRコードは登録しない
+  const token = cutbagIdOf(text);
+  if(!token){ camNote('カット袋のQRコードだけ読み取れます'); return; }
+  // カメラに映ったままでも、同じカット袋は1回だけ。もう一度読むときは「完了」してから読み直す
+  if(seenOf(ui.scan).has(token)) return;
+  seenOf(ui.scan).add(token);
   const hit = findProjectOf(token);
   if(!hit){ feedback(true); openRegister(token); return; }
   if(hit.pid!==cfg.current){
     const pr = projOf(hit.pid);
-    if(ui.scan && ui.scan.items.length){
+    if(ui.scan.items.length){
       const no = withS(PJ[hit.pid].S, ()=>cutById(hit.q.cut).no);
       ui.scan.items.push({cutNo:no, text:`別のPJ（${pr.name}）のカット袋です。「完了」してから読み直してください`, kind:'bad'});
       feedback(false); renderPhone(); return;
     }
-    useProject(hit.pid, 'scanner'); renderPhone(); flashToast(`PJ「${pr.name}」に切り替えました`);
+    useProject(hit.pid, 'scanner'); seenOf(ui.scan).add(token); renderPhone(); flashToast(`PJ「${pr.name}」に切り替えました`);
   }
   cam.busy = true;
   feedback(hit.q.status==='active');

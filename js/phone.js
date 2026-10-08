@@ -328,7 +328,7 @@ $('#screen').addEventListener('click', e=>{
   if(pill){ readForm(); ui.form.reason = pill.dataset.reason; renderPhone(); return; }
   const ue = e.target.closest('[data-undo-ev]');
   if(ue){ const no=Number(ue.dataset.undoEv), ev=S.events.find(x=>x.no===no); const r=act(ev.cut,'VOID',{voidOf:no, note:`${evText(ev)} を取り消し`});
-    if(ui.screen==='scanner'){ const it=ui.scan.items.find(x=>x.no===no); if(it) it.voided=true; renderPhone();  sync(); }
+    if(ui.screen==='scanner'){ const it=ui.scan.items.find(x=>x.no===no); if(it) it.voided=true; if(ui.scan.seen && ev.qr) ui.scan.seen.delete(ev.qr); renderPhone();  sync(); }
     else { if(ui.last) ui.last.voided=true; renderPhone();  sync(); }
     return; }
   const pb = e.target.closest('[data-person-ev]');

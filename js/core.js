@@ -236,11 +236,35 @@ function issues(){
   return out;
 }
 
+/* ================= カット袋のQRのID ================= */
+// QRの中身は「CUTBAG:」＋ID（8文字）。ID は「Q」＋6文字＋確認用の1文字。
+// 確認用の1文字は前の7文字から計算する（Luhn mod 34）。1文字の読み違い・隣どうしの入れ替わりは、形式に合わなくなる
+const ID_CHARS = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ';   // I・O は 1・0 と紛らわしいので使わない
+function idCheck(body){
+  const n = ID_CHARS.length; let sum = 0, f = 2;
+  for(let i=body.length-1; i>=0; i--){ const a = f * ID_CHARS.indexOf(body[i]); sum += Math.floor(a/n) + a%n; f = f===2 ? 1 : 2; }
+  return ID_CHARS[(n - sum%n) % n];
+}
+const isCutbagId = id => /^Q[0-9A-HJ-NP-Z]{7}$/.test(id) && idCheck(id.slice(0,7))===id[7];
+const qrText = id => 'CUTBAG:' + id;
+// 読み取った文字列からカット袋のIDを取り出す。形式に合わないもの（ほかのQRコード）は null
+function cutbagIdOf(text){
+  const m = /^CUTBAG:([0-9A-Z]{8})$/.exec(String(text||'').trim().toUpperCase());
+  return m && isCutbagId(m[1]) ? m[1] : null;
+}
+function newCutbagId(){
+  const r = new Uint32Array(6); crypto.getRandomValues(r);
+  const body = 'Q' + Array.from(r, x=>ID_CHARS[x % ID_CHARS.length]).join('');
+  return body + idCheck(body);
+}
+// デモのQRのIDは固定（印刷したQRコードを、初期データを作り直しても使い続けられるように）。C001〜C015 の順、最後は C005 の再発行分
+const FIXED_QR = ['Q7K2M9A','QX4P8DL','Q3N6T1R','QH8W2CE','QB5J7VY','Q9F3K6S','QM2R8XT','QD6Y4NB','QT1G9HP','QL7C3WK','QR4V8JD','QE9S2MZ','QW5H6QA','QN3B7FX','QC8Z1LU','QP6D4GR'].map(b=>b+idCheck(b));
+// まだどのカットにも紐づいていない予備のQR（読み取ると「カット袋の登録」になる）。どのPJでも使える
+const SPARE_QR = ['QS4K8TA','QS7M2PD','QS9R3XE','QS2V6NH','QS5W8JL','QS3B9QM','QS6C1ZR','QS8F4YU'].map(b=>b+idCheck(b));
+
 /* ================= seed data ================= */
 function seed(){
   S = {cuts:[], qrs:[], events:[], orders:[], seq:0, rtSeq:0, retSeq:0, poSeq:0, day:0};
-  // QRのIDは固定（印刷したQRコードを、初期データを作り直しても使い続けられるように）。C001〜C015 の順、最後は C005 の再発行分
-  const FIXED_QR = ['Q7K2M9A','QX4P8DL','Q3N6T1R','QH8W2CE','QB5J7VY','Q9F3K6S','QM2R8XT','QD6Y4NB','QT1G9HP','QL7C3WK','QR4V8JD','QE9S2MZ','QW5H6QA','QN3B7FX','QC8Z1LU','QP6D4GR'];
   let tokN = 0;
   const tok = () => FIXED_QR[tokN++];
   const defs = [
