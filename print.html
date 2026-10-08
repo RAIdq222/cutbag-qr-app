@@ -32,6 +32,8 @@
   .qr svg { width: 52mm; height: 52mm; }
   .id { text-align: center; font-size: 12pt; font-weight: 700; letter-spacing: .02em; }
   .id small { display: block; font-size: 8pt; font-weight: 400; color: var(--muted); letter-spacing: .08em; }
+  .card.spare .title b, .card.spare .meta b { color: transparent; }
+  .spare-tag { position: absolute; bottom: 4mm; right: 4mm; border: 1px solid var(--muted); color: var(--muted); font-size: 8pt; padding: 0.5mm 2.5mm; border-radius: 2mm; }
   .old { position: absolute; bottom: 4mm; right: 4mm; background: #C2410C; color: #fff; font-size: 9pt; font-weight: 700; padding: 1mm 3mm; border-radius: 2mm; }
   @media print { body { background: #fff; } .bar, .note { display: none; } .sheet { margin: 0 auto; } }
 </style>
@@ -39,6 +41,7 @@
 <body>
 <div class="bar">
   <h1>カット袋の代わりに使うQRコード</h1>
+  <label><input type="checkbox" id="withSpare"> まだ紐づけていない予備のQRも印刷する</label>
   <label><input type="checkbox" id="withOld"> 旧ラベルも印刷する</label>
   <a href="./">アプリに戻る</a>
   <button type="button" onclick="window.print()">印刷する</button>
@@ -50,9 +53,20 @@
 <script>
 const get = k => { try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } };
 function qrSvg(text){ const q = qrcode(0,'M'); q.addData(text); q.make(); return q.createSvgTag({cellSize:4, margin:2, scalable:true}); }
-let data = null;
+let data = null, pjName = '';
+// まだどのカットにも紐づいていない予備のQR（読み取ると「カット袋の登録」になる）。どのPJでも使える
+const SPARE_QR = ['QS4K8TA','QS7M2PD','QS9R3XE','QS2V6NH','QS5W8JL','QS3B9QM','QS6C1ZR','QS8F4YU'];
+function spareCard(token){
+  return `<div class="card spare">
+      <span class="spare-tag">予備（未登録）</span>
+      <div class="title"><div><span class="lbl">タイトル</span><b>-</b></div><div class="ep"><span class="lbl">話数</span><b>-</b></div></div>
+      <div class="meta"><span class="cut">CUT<b>-</b></span><span class="time">TIME<b>-</b></span></div>
+      <div class="qr">${qrSvg('CUTBAG:'+token)}</div>
+      <div class="id">&nbsp;<small>${esc(token)}</small></div>
+    </div>`;
+}
 function render(){
-  const withOld = document.getElementById('withOld').checked;
+  const withOld = document.getElementById('withOld').checked, withSpare = document.getElementById('withSpare').checked;
   const cutBy = id => data.cuts.find(c=>c.id===id);
   const list = data.qrs.filter(q=>q.status==='active' || (withOld && q.status==='revoked'))
     .map(q=>({q, c:cutBy(q.cut)})).filter(x=>x.c)
@@ -64,26 +78,34 @@ function render(){
       <div class="qr">${qrSvg('CUTBAG:'+q.token)}</div>
       <div class="id">${esc(c.ep)} ${esc(c.no)}<small>${esc(q.token)}</small></div>
     </div>`);
+  const used = new Set(data.qrs.map(q=>q.token));
+  const spares = withSpare ? SPARE_QR.filter(t=>!used.has(t)) : [];
+  spares.forEach(t=>cards.push(spareCard(t)));
   let html = '';
   for(let i=0; i<cards.length; i+=4) html += `<div class="sheet">${cards.slice(i,i+4).join('')}</div>`;
   document.getElementById('pages').innerHTML = html;
-  document.getElementById('note').textContent = `${list.length}枚（A4 1枚に4枚）。点線で切って、カット袋の代わりに使います。`;
+  document.getElementById('note').textContent = `${pjName ? pjName+'：' : ''}${list.length + spares.length}枚（A4 1枚に4枚）。点線で切って、カット袋の代わりに使います。予備のQRは、読み取ると「カット袋の登録」になります。`;
 }
 async function boot(){
+  // アプリで今使っているPJのQRを印刷する
   const cfg = get('cutbagqr.cfg') || {};
-  if(cfg.endpoint){
+  const pj = (cfg.projects || []).find(p=>p.id===cfg.current) || null;
+  if(pj){ pjName = pj.name; }
+  if(pj && pj.endpoint){
     try{
-      const r = await fetch(cfg.endpoint, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({action:'load', key:cfg.key||''})});
+      const r = await fetch(pj.endpoint, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({action:'load', key:pj.key||''})});
       const j = await r.json(); if(j.ok && j.data.cuts.length) data = j.data;
     }catch(e){}
   }
-  data = data || get('cutbagqr.data');
+  data = data || (pj && get('cutbagqr.data.'+pj.id));
   // データがないときは、アプリの初期データ（QRのIDは固定）で印刷する
   if(!data || !data.cuts){ seed(); data = {cuts:S.cuts, qrs:S.qrs}; }
   render();
 }
 if(/[?&]old=1/.test(location.search)) document.getElementById('withOld').checked = true;
+if(/[?&]spare=1/.test(location.search)) document.getElementById('withSpare').checked = true;
 document.getElementById('withOld').addEventListener('change', render);
+document.getElementById('withSpare').addEventListener('change', render);
 boot();
 </script>
 </body>

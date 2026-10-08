@@ -370,7 +370,7 @@ function buildTab(id){
   if(id==='log'){
     const head=['No','実施日時','入力日時','C#','QR','操作','工程','担当・所在','発注番号','リテイク','備考','入力者'];
     const voided=voidedSet();
-    const typeName={IN:'配布',UP:'回収',OK:'確認OK',RETURN:'差し戻し',RETAKE:'リテイク',VOID:'取り消し',ALERT:'無効QR',MANUAL:'番号で開く'};
+    const typeName={IN:'配布',UP:'回収',OK:'確認OK',RETURN:'差し戻し',RETAKE:'リテイク',VOID:'取り消し',ALERT:'無効QR',MANUAL:'番号で開く',LINK:'QR登録'};
     const rows=S.events.map(e=>{ const c=cutById(e.cut); const stg=STAGES[e.stage]?.name||'';
       const typeCls = e.type==='RETAKE'||e.type==='RETURN'?'st-retake':e.type==='ALERT'?'st-bad':e.type==='VOID'?'st-stale':'';
       const opName = e.type==='OK' && e.to!=null ? `確認OK→${STAGES[e.to].name}` : (typeName[e.type]||e.type);

@@ -705,3 +705,16 @@ body{background:var(--surface);overscroll-behavior:none;-webkit-tap-highlight-co
 .settings input{border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:inherit;background:var(--surface);color:var(--ink)}
 .act.ghost{background:var(--surface);color:var(--accent);border:1px solid var(--accent)}
 .sess-list{max-height:none}
+.pj-chip{align-self:flex-start;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);border-radius:999px;padding:4px 12px;font-size:12.5px;font-weight:700;margin:0}
+.pj-chip.static{display:inline-block}
+.pj-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.pj-list li{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.pj-list li.on{border-color:var(--accent);background:var(--accent-soft)}
+.pj-list li > div{flex:1;min-width:0;display:flex;flex-direction:column}
+.pj-list small{color:var(--muted);font-size:11.5px}
+.pj-list em{font-style:normal;font-size:12px;color:var(--accent);font-weight:700}
+.settings select{border:1px solid var(--line);border-radius:8px;padding:10px 12px;font:inherit;background:var(--surface);color:var(--ink)}
+.reg-big{font-family:var(--font-disp);font-size:15px;text-align:center;padding:6px 0}
+.reg-big b{font-size:34px;margin-left:6px}
+.sess-list li.reg{color:var(--accent)}
+.sess-list li.reg em{color:var(--accent);font-weight:700}

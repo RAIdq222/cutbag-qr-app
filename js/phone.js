@@ -14,6 +14,7 @@ function renderPhone(){
   else if(ui.screen==='cut') h += cutView();
   else if(ui.screen==='revoked') h += revokedView();
   else if(ui.screen==='settings') h += settingsView();
+  else if(ui.screen==='register') h += registerView();
   if(ui.modal) h += `<div class="scrim" data-a="closeModal"></div>` + modalView();
   if(ui.toast) h += `<div class="toast" role="status">${esc(ui.toast)}</div>`;
   el.innerHTML = h;
@@ -36,6 +37,7 @@ function homeView(){
   const found = S.cuts.map(c=>({c, d:derive(c.id)})).filter(x=>(!q || String(Number(x.c.no.slice(1))).startsWith(String(Number(q))) ) && filterMatch(x.d, f));
   return `<div class="appbar"><h3>カット袋QR</h3>${who()}<button type="button" class="gear" data-a="settings" aria-label="設定"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.4-2.5a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L15 3.5h-4l-.3 2.5a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1c.5.4 1.1.8 1.7 1l.3 2.5h4l.3-2.5c.6-.2 1.2-.6 1.7-1l2.4 1 2-3.4-2-1.6Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button></div>
   <div class="body">
+    ${pjLine()}
     ${syncLine()}
     ${banner()}
     <button type="button" class="scan-cta" data-a="scan"><svg class="scan-ico" viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><rect x="7.5" y="7.5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><b>QRコード読み取り</b></button>
@@ -116,7 +118,7 @@ function scannerView(){
     <div class="finder cam${ui.scanning?' scanning':''}"><video id="cam" playsinline muted autoplay></video><span class="corner c1"></span><span class="corner c2"></span><span class="corner c3"></span><span class="corner c4"></span><span class="laser"></span>
       ${camMsg() ? `<span class="ftext">${camMsg()}</span>` : ''}</div>
     <div class="sess-count"><b>${okN}</b>件 登録${sessionIns().length>1 ? `<button type="button" class="linkbtn due-all" data-a="dueAll">納期をまとめて設定</button>` : ''}</div>
-    ${s.items.length ? `<ul class="sess-list">${[...s.items].reverse().map(it=>`<li class="${it.kind}${it.voided?' void':''}"><b>${esc(it.cutNo)}</b><span><span class="row-t">${personOf(it)}</span>${dueBtn(it)}</span>${it.kind!=='ok'?'<em>登録なし</em>':it.voided?'<em>取り消し済み</em>':`<button type="button" class="linkbtn" data-undo-ev="${it.no}">取り消し</button>`}</li>`).join('')}</ul>` : ''}
+    ${s.items.length ? `<ul class="sess-list">${[...s.items].reverse().map(it=>`<li class="${it.kind}${it.voided?' void':''}"><b>${esc(it.cutNo)}</b><span><span class="row-t">${personOf(it)}</span>${dueBtn(it)}</span>${it.kind==='reg'?'<em>QR登録</em>':it.kind!=='ok'?'<em>登録なし</em>':it.voided?'<em>取り消し済み</em>':`<button type="button" class="linkbtn" data-undo-ev="${it.no}">取り消し</button>`}</li>`).join('')}</ul>` : ''}
     <button type="button" class="act sticky" data-a="closeScan">完了</button>
   </div>`;
 }
@@ -195,9 +197,11 @@ function evText(e){
   if(e.type==='VOID') return `取り消し（No.${e.voidOf}）`;
   if(e.type==='ALERT') return `無効なQRの読み取り`;
   if(e.type==='MANUAL') return `QRを使わずカット番号で開いた`;
+  if(e.type==='LINK') return e.note || 'カット袋を登録';
   return e.type;
 }
 function modalView(){
+  if(ui.modal==='pj') return pjView();
   if(ui.modal==='cal') return calView();
   if(ui.modal==='person') return personView();
   const c = cutById(ui.cut), d = derive(c.id), stg = STAGES[d.stage], m = ui.form || {};
