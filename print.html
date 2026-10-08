@@ -89,7 +89,11 @@ function render(){
 async function boot(){
   // アプリで今使っているPJのQRを印刷する
   const cfg = get('cutbagqr.cfg') || {};
-  const pj = (cfg.projects || []).find(p=>p.id===cfg.current) || null;
+  let projects = [];
+  try{ const r = await fetch('config.json', {cache:'no-store'}); if(r.ok) projects = ((await r.json()).projects || []).filter(p=>p && p.endpoint); }catch(e){}
+  const pjIdOf = ep => 'pj-' + Array.from(ep).reduce((h,c)=>((h*31 + c.charCodeAt(0))>>>0), 7).toString(36);
+  const list = projects.map(p=>({...p, id:pjIdOf(p.endpoint), name:(cfg.names||{})[pjIdOf(p.endpoint)] || p.name || ''}));
+  const pj = list.find(p=>p.id===cfg.current) || list[0] || null;
   if(pj){ pjName = pj.name; }
   if(pj && pj.endpoint){
     try{

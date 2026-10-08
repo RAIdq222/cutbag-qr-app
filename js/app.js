@@ -10,7 +10,7 @@ const store = {
   set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
   del(k){ try{ localStorage.removeItem(k); }catch(e){} },
 };
-const saveCfg = () => store.set(CFG_KEY, cfg);
+const saveCfg = () => store.set(CFG_KEY, {operator:cfg.operator, current:cfg.current, lastReg:cfg.lastReg, names:Object.fromEntries(cfg.projects.map(p=>[p.id, p.name]))});
 const projOf = pid => cfg.projects.find(p=>p.id===pid);
 const curProj = () => projOf(cfg.current);
 // core.js・phone.js は S を使うので、別のPJを扱うときは一時的に S を差し替える
@@ -59,7 +59,7 @@ async function doSync(pid){
 }
 function syncLine(){
   const p = PJ[cfg.current], pr = curProj();
-  if(!pr || !pr.endpoint) return `<p class="sync-line">端末内だけに保存しています（設定から担当PJのスプレッドシートを登録すると反映されます）</p>`;
+  if(!pr || !pr.endpoint) return `<p class="sync-line">端末内だけに保存しています</p>`;
   if(p.sync.err) return `<p class="sync-line bad">スプレッドシートに送れていません（${esc(p.sync.err)}）。自動でもう一度送ります</p>`;
   if(p.sync.pending) return `<p class="sync-line">スプレッドシートに送っています（${p.sync.pending}件）</p>`;
   return p.sync.at ? `<p class="sync-line ok">スプレッドシートに反映済み ${fDT(p.sync.at)}</p>` : '';
@@ -105,7 +105,6 @@ async function reload(pid, quiet){
     p.S = makeState(j.data); markSent(pid); store.set(dataKey(pid), j.data);
     p.sync = {at:Date.now(), err:null, pending:0};
     if(pid===cfg.current) S = p.S;
-    if(!quiet && !j.data.cuts.length) flashToast('このスプレッドシートにはまだデータがありません。「初期データを作る」を押してください');
   }catch(err){ p.sync.err = err.message; if(!quiet) flashToast(err.message); }
   if(!ui.modal && ['home','settings'].includes(ui.screen)) renderPhone();
 }
@@ -122,21 +121,22 @@ async function resetData(){
 }
 
 /* ---------- 起動 ---------- */
+// 担当PJ（スプレッドシート）の一覧は、システム側が config.json に書いておく。制作の方は設定しない
+//   {"projects":[{"endpoint":"https://script.google.com/macros/s/…/exec", "key":""}]}
+// PJ名はスプレッドシートの名前を使う。一覧がないときは、端末の中だけで動くデモになる
+const pjIdOf = ep => 'pj-' + Array.from(ep).reduce((h,c)=>((h*31 + c.charCodeAt(0))>>>0), 7).toString(36);
 async function boot(){
   let preset = {};
   try{ const r = await fetch('config.json', {cache:'no-store'}); if(r.ok) preset = await r.json(); }catch(e){}
   const saved = store.get(CFG_KEY) || {};
-  cfg = {...cfg, ...saved};
-  // 前の版の設定（書き込み先が1つ）を、担当PJの形に直す
-  if(!cfg.projects || !cfg.projects.length){
-    const ep = saved.endpoint || preset.endpoint || '';
-    cfg.projects = [{id: ep ? 'pj1' : 'local', name: ep ? '担当PJ' : 'デモ（端末内）', endpoint: ep, key: saved.key || preset.key || ''}];
-    const old = store.get('cutbagqr.data'); if(old) store.set(dataKey(cfg.projects[0].id), old);
-    delete cfg.endpoint; delete cfg.key;
-  }
-  cfg.lastReg = cfg.lastReg || {};
+  cfg = {operator: saved.operator || OPERATOR, current: saved.current || null, lastReg: saved.lastReg || {}, projects: []};
+  const list = (preset.projects || []).filter(p=>p && p.endpoint);
+  const names = saved.names || {};
+  cfg.projects = list.length
+    ? list.map(p=>{ const id = pjIdOf(p.endpoint); return {id, name: p.name || names[id] || 'PJ', endpoint: p.endpoint, key: p.key || ''}; })
+    : [{id:'local', name:'デモ（端末内）', endpoint:'', key:''}];
   if(!projOf(cfg.current)) cfg.current = cfg.projects[0].id;
-  OPERATOR = cfg.operator || OPERATOR;
+  OPERATOR = cfg.operator;
   cfg.projects.forEach(addPJ);
   cfg.projects.forEach(p=>{ if(!p.endpoint && !PJ[p.id].S.cuts.length){ PJ[p.id].S = seedState(); store.set(dataKey(p.id), rawOf(PJ[p.id].S)); markSent(p.id); } });
   saveCfg();
@@ -146,27 +146,21 @@ async function boot(){
 }
 
 /* ---------- 設定の画面 ---------- */
+// 制作の方が設定するのは入力者だけ。管理用の操作（QRの印刷・デモの初期データ）は、URL の末尾に #admin を付けて開いたときだけ出す
+const isAdmin = () => /admin/.test(location.hash + location.search);
 function settingsView(){
   const pr = curProj(), s = PJ[cfg.current].S;
   return `<div class="appbar"><button class="back" data-a="home" aria-label="戻る">‹</button><h3>設定</h3>${who()}</div>
   <div class="body settings">
     <div class="field"><label class="lbl" for="cfgOp">入力者</label><input id="cfgOp" value="${esc(cfg.operator||'')}" placeholder="例：東海林（制作進行）"></div>
     <button type="button" class="act ghost" data-a="opSave">入力者を保存</button>
-    <section class="home-sec"><h5>担当PJ</h5>
-      <ul class="pj-list">${cfg.projects.map(p=>`<li class="${p.id===cfg.current?'on':''}"><div><b>${esc(p.name)}</b><small>${p.endpoint ? 'スプレッドシート' : '端末内だけ'}</small></div>
-        ${p.id===cfg.current ? '<em>使用中</em>' : `<button type="button" class="linkbtn" data-pj="${esc(p.id)}">使う</button>`}
-        ${cfg.projects.length>1 ? `<button type="button" class="linkbtn" data-pj-del="${esc(p.id)}">外す</button>` : ''}</li>`).join('')}</ul>
-      <div class="field"><label class="lbl" for="pjEp">PJのスプレッドシートを登録する（Apps Script のウェブアプリのURL）</label><input id="pjEp" placeholder="https://script.google.com/macros/s/…/exec" inputmode="url"></div>
-      <div class="field"><label class="lbl" for="pjKey">合言葉（設定した場合）</label><input id="pjKey"></div>
-      <button type="button" class="act" data-a="pjAdd">登録して読み込む</button>
-    </section>
-    <section class="home-sec"><h5>${esc(pr.name)} のデータ</h5>
+    ${isAdmin() ? `<section class="home-sec"><h5>管理（${esc(pr.name)}）</h5>
       <p class="mnote">カット ${s.cuts.length}件・QR ${s.qrs.filter(q=>q.status==='active').length}件・履歴 ${s.events.length}件</p>
       <button type="button" class="act ghost" data-a="print">QRコードを印刷する</button>
       ${ui.confirmReset
-        ? `<div class="confirm"><span>${esc(pr.name)} のデータを消して、初期データ（ダミーのカット・発注書・履歴）に作り直します。スプレッドシートも書き直されます。</span><div class="row"><button class="btn" data-a="resetNo">やめる</button><button class="btn primary" data-a="resetYes">作り直す</button></div></div>`
-        : `<button type="button" class="act ghost" data-a="resetAsk">初期データを作る</button>`}
-    </section>
+        ? `<div class="confirm"><span>${esc(pr.name)} のデータを消して、デモの初期データに作り直します。スプレッドシートも書き直されます。</span><div class="row"><button class="btn" data-a="resetNo">やめる</button><button class="btn primary" data-a="resetYes">作り直す</button></div></div>`
+        : `<button type="button" class="act ghost" data-a="resetAsk">デモの初期データを作る</button>`}
+    </section>` : ''}
     ${ui.busy ? `<p class="sync-line">${esc(ui.busy)}</p>` : ''}
   </div>`;
 }
@@ -224,18 +218,6 @@ function linkQr(r){
 function appAction(a, t){
   if(a==='settings'){ ui = {screen:'settings'}; renderPhone(); return true; }
   if(a==='opSave'){ cfg.operator = $('#cfgOp').value.trim() || OPERATOR; OPERATOR = cfg.operator; saveCfg(); flashToast('保存しました'); return true; }
-  if(a==='pjAdd'){
-    const ep = $('#pjEp').value.trim(), key = $('#pjKey').value.trim();
-    if(!/^https:\/\//.test(ep) && !/^http:\/\/(127\.0\.0\.1|localhost)/.test(ep)){ flashToast('Apps Script のウェブアプリのURLを入れてください'); return true; }
-    const exist = cfg.projects.find(p=>p.endpoint===ep);
-    if(exist){ useProject(exist.id, 'settings'); reload(exist.id, false); return true; }
-    const p = {id:'pj'+Date.now().toString(36), name:'PJ（読み込み中）', endpoint:ep, key};
-    // 端末内だけのデモPJしかないときは、それを置き換える
-    if(cfg.projects.length===1 && !cfg.projects[0].endpoint){ store.del(dataKey(cfg.projects[0].id)); delete PJ[cfg.projects[0].id]; cfg.projects = []; }
-    cfg.projects.push(p); addPJ(p); useProject(p.id, 'settings'); renderPhone();
-    reload(p.id, false).then(()=>{ if(!PJ[p.id].sync.err) flashToast(`「${p.name}」を登録しました`); });
-    return true;
-  }
   if(a==='pjPick'){ ui.modal = 'pj'; renderPhone(); return true; }
   if(a==='print'){ location.href = 'print.html'; return true; }
   if(a==='resetAsk'){ ui.confirmReset = true; renderPhone(); return true; }
@@ -265,9 +247,7 @@ document.addEventListener('change', e=>{
 });
 document.addEventListener('click', e=>{
   const pj = e.target.closest('[data-pj]');
-  if(pj){ e.stopPropagation(); const back = ui.screen==='settings' ? 'settings' : 'home'; useProject(pj.dataset.pj, back); renderPhone(); return; }
-  const del = e.target.closest('[data-pj-del]');
-  if(del){ e.stopPropagation(); const id = del.dataset.pjDel; cfg.projects = cfg.projects.filter(p=>p.id!==id); delete PJ[id]; store.del(dataKey(id)); if(cfg.current===id) cfg.current = cfg.projects[0].id; useProject(cfg.current, 'settings'); renderPhone(); }
+  if(pj){ e.stopPropagation(); useProject(pj.dataset.pj, 'home'); renderPhone(); return; }
 }, true);
 
 /* ---------- カメラでQRコードを読む ---------- */
