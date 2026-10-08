@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>カット袋QR 印刷用</title>
+<style>
+  @page { size: A4 portrait; margin: 8mm; }
+  :root { --ink:#18212F; --muted:#5A6477; --line:#9AA3B2; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif; color: var(--ink); background: #EDF0F4; }
+  .bar { position: sticky; top: 0; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 12px 16px; background: #fff; border-bottom: 1px solid #D3D9E2; font-size: 14px; }
+  .bar h1 { font-size: 16px; margin: 0 auto 0 0; }
+  .bar button, .bar a { font: inherit; border: 1px solid #2457C5; background: #2457C5; color: #fff; border-radius: 8px; padding: 7px 14px; text-decoration: none; }
+  .bar a { background: #fff; color: #2457C5; }
+  .bar label { display: flex; gap: 6px; align-items: center; }
+  .note { margin: 0; padding: 10px 16px; font-size: 13px; color: var(--muted); }
+  .sheet { width: 194mm; margin: 12px auto; background: #fff; display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 138mm; gap: 4mm; padding: 0; page-break-after: always; break-after: page; }
+  .card { border: 1.2px dashed var(--line); padding: 7mm 7mm 6mm; display: grid; grid-template-rows: auto auto 1fr auto; gap: 4mm; position: relative; }
+  .title { display: grid; grid-template-columns: 1fr 22mm; border: 1px solid var(--ink); }
+  .title > div { padding: 1.5mm 2.5mm; min-height: 15mm; }
+  .title > div + div { border-left: 1px solid var(--ink); text-align: center; }
+  .lbl { font-size: 7pt; color: var(--muted); display: block; }
+  .title b { font-size: 13pt; font-weight: 500; }
+  .title .ep b { font-size: 18pt; }
+  .meta { display: flex; justify-content: space-between; align-items: baseline; }
+  .cut { font-size: 9pt; font-weight: 900; letter-spacing: .08em; }
+  .cut b { font-size: 34pt; font-weight: 500; margin-left: 2mm; letter-spacing: 0; }
+  .time { font-size: 9pt; font-weight: 900; }
+  .time b { font-size: 15pt; font-weight: 500; margin-left: 1.5mm; }
+  .qr { display: grid; place-items: center; }
+  .qr svg { width: 52mm; height: 52mm; }
+  .id { text-align: center; font-size: 12pt; font-weight: 700; letter-spacing: .02em; }
+  .id small { display: block; font-size: 8pt; font-weight: 400; color: var(--muted); letter-spacing: .08em; }
+  .old { position: absolute; bottom: 4mm; right: 4mm; background: #C2410C; color: #fff; font-size: 9pt; font-weight: 700; padding: 1mm 3mm; border-radius: 2mm; }
+  @media print { body { background: #fff; } .bar, .note { display: none; } .sheet { margin: 0 auto; } }
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>カット袋の代わりに使うQRコード</h1>
+  <label><input type="checkbox" id="withOld"> 旧ラベルも印刷する</label>
+  <a href="./">アプリに戻る</a>
+  <button type="button" onclick="window.print()">印刷する</button>
+</div>
+<p class="note" id="note">読み込んでいます…</p>
+<div id="pages"></div>
+<script src="vendor/qrcode.js"></script>
+<script src="js/core.js"></script>
+<script>
+const get = k => { try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } };
+function qrSvg(text){ const q = qrcode(0,'M'); q.addData(text); q.make(); return q.createSvgTag({cellSize:4, margin:2, scalable:true}); }
+let data = null;
+function render(){
+  const withOld = document.getElementById('withOld').checked;
+  const cutBy = id => data.cuts.find(c=>c.id===id);
+  const list = data.qrs.filter(q=>q.status==='active' || (withOld && q.status==='revoked'))
+    .map(q=>({q, c:cutBy(q.cut)})).filter(x=>x.c)
+    .sort((a,b)=>a.c.no.localeCompare(b.c.no) || (a.q.status==='active'?-1:1));
+  const cards = list.map(({q,c})=>`<div class="card">
+      ${q.status==='revoked' ? '<span class="old">旧ラベル</span>' : ''}
+      <div class="title"><div><span class="lbl">タイトル</span><b>サンプル作品</b></div><div class="ep"><span class="lbl">話数</span><b>${esc(String(c.ep).replace('#','').replace(/^0+/,''))}</b></div></div>
+      <div class="meta"><span class="cut">CUT<b>${esc(String(Number(c.no.slice(1))))}</b></span><span class="time">TIME<b>${esc(c.sec)}</b></span></div>
+      <div class="qr">${qrSvg('CUTBAG:'+q.token)}</div>
+      <div class="id">${esc(c.ep)} ${esc(c.no)}<small>${esc(q.token)}</small></div>
+    </div>`);
+  let html = '';
+  for(let i=0; i<cards.length; i+=4) html += `<div class="sheet">${cards.slice(i,i+4).join('')}</div>`;
+  document.getElementById('pages').innerHTML = html;
+  document.getElementById('note').textContent = `${list.length}枚（A4 1枚に4枚）。点線で切って、カット袋の代わりに使います。`;
+}
+async function boot(){
+  const cfg = get('cutbagqr.cfg') || {};
+  if(cfg.endpoint){
+    try{
+      const r = await fetch(cfg.endpoint, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({action:'load', key:cfg.key||''})});
+      const j = await r.json(); if(j.ok && j.data.cuts.length) data = j.data;
+    }catch(e){}
+  }
+  data = data || get('cutbagqr.data');
+  // データがないときは、アプリの初期データ（QRのIDは固定）で印刷する
+  if(!data || !data.cuts){ seed(); data = {cuts:S.cuts, qrs:S.qrs}; }
+  render();
+}
+if(/[?&]old=1/.test(location.search)) document.getElementById('withOld').checked = true;
+document.getElementById('withOld').addEventListener('change', render);
+boot();
+</script>
+</body>
+</html>
