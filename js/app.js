@@ -116,9 +116,9 @@ async function resetData(){
   p.S = seedState(); S = p.S; store.set(dataKey(pid), rawOf(p.S));
   if(pr.endpoint){
     ui.busy = '初期データを書き込んでいます…'; renderPhone();
-    try{ await api(pr, 'reset', {data:rawOf(p.S), tables:buildTables()}); markSent(pid); p.sync = {at:Date.now(), err:null, pending:0}; ui.busy = null; flashToast('初期データを作りました'); }
+    try{ await api(pr, 'reset', {data:rawOf(p.S), tables:buildTables()}); markSent(pid); p.sync = {at:Date.now(), err:null, pending:0}; ui.busy = null; flashToast('初期化しました'); }
     catch(err){ ui.busy = null; flashToast(err.message); }
-  } else { markSent(pid); flashToast('初期データを作りました（端末内）'); }
+  } else { markSent(pid); flashToast('初期化しました（端末内）'); }
   renderPhone();
 }
 
@@ -148,7 +148,7 @@ async function boot(){
 }
 
 /* ---------- 設定の画面 ---------- */
-// 制作の方が設定するのは入力者だけ。管理用の操作（QRの印刷・デモの初期データ）は、URL の末尾に #admin を付けて開いたときだけ出す
+// 制作の方が設定するのは入力者だけ。デモ用に、スプレッドシートの初期化をデバッグの欄に置く。QRの印刷は、URL の末尾に #admin を付けて開いたときだけ出す
 const isAdmin = () => /admin/.test(location.hash + location.search);
 function settingsView(){
   const pr = curProj(), s = PJ[cfg.current].S;
@@ -156,13 +156,13 @@ function settingsView(){
   <div class="body settings">
     <div class="field"><label class="lbl" for="cfgOp">入力者</label><input id="cfgOp" value="${esc(cfg.operator||'')}" placeholder="例：東海林（制作進行）"></div>
     <button type="button" class="act ghost" data-a="opSave">入力者を保存</button>
-    ${isAdmin() ? `<section class="home-sec"><h5>管理（${esc(pr.name)}）</h5>
+    <section class="home-sec"><h5>デバッグ（${esc(pr.name)}）</h5>
       <p class="mnote">カット ${s.cuts.length}件・QR ${s.qrs.filter(q=>q.status==='active').length}件・履歴 ${s.events.length}件</p>
-      <button type="button" class="act ghost" data-a="print">QRコードを印刷する</button>
       ${ui.confirmReset
-        ? `<div class="confirm"><span>${esc(pr.name)} のデータを消して、デモの初期データに作り直します。スプレッドシートも書き直されます。</span><div class="row"><button class="btn" data-a="resetNo">やめる</button><button class="btn primary" data-a="resetYes">作り直す</button></div></div>`
-        : `<button type="button" class="act ghost" data-a="resetAsk">デモの初期データを作る</button>`}
-    </section>` : ''}
+        ? `<div class="confirm"><span>${esc(pr.name)} のスプレッドシートを、デモの初期データに作り直します。読み取った内容は消えます。</span><div class="row"><button class="btn" data-a="resetNo">やめる</button><button class="btn primary" data-a="resetYes">初期化する</button></div></div>`
+        : `<button type="button" class="act ghost" data-a="resetAsk">スプレッドシートを初期化する</button>`}
+      ${isAdmin() ? `<button type="button" class="act ghost" data-a="print">QRコードを印刷する</button>` : ''}
+    </section>
     ${ui.busy ? `<p class="sync-line">${esc(ui.busy)}</p>` : ''}
   </div>`;
 }
