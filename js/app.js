@@ -17,11 +17,18 @@ const curProj = () => projOf(cfg.current);
 function withS(s, fn){ const keep = S; S = s; try{ return fn(); } finally { S = keep; } }
 
 /* ---------- Google スプレッドシート（Apps Script）との通信 ---------- */
+let API_TIMEOUT = 60000;
 async function api(p, action, payload={}){
   if(!p.endpoint) throw new Error('書き込み先が設定されていません');
-  const res = await fetch(p.endpoint, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({action, key:p.key||'', ...payload}), redirect:'follow'});
-  // Google 側の転送先が、ときどきエラーのページや doGet の返事を返す。そのときは届いていない扱いにして、送り直す
-  let j = null; try{ j = JSON.parse(await res.text()); }catch(e){}
+  // Google 側が返事を返さずに止まることがある。60秒たったら届いていない扱いにして、送り直す（同じものを送り直しても重ならない）
+  const ac = new AbortController(), timer = setTimeout(()=>ac.abort(), API_TIMEOUT);
+  let j = null;
+  try{
+    const res = await fetch(p.endpoint, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({action, key:p.key||'', ...payload}), redirect:'follow', signal:ac.signal});
+    // Google 側の転送先が、ときどきエラーのページや doGet の返事を返す。そのときも届いていない扱いにして、送り直す
+    try{ j = JSON.parse(await res.text()); }catch(e){}
+  }catch(e){ if(ac.signal.aborted) throw new Error('スプレッドシートから返事がありませんでした'); throw e; }
+  finally{ clearTimeout(timer); }
   if(!j || (j.action ? j.action!==action : 'message' in j) || (action==='load' && j.ok && !j.data)) throw new Error('スプレッドシートから返事がありませんでした');
   if(!j.ok) throw new Error(j.error || '書き込みに失敗しました');
   return j;

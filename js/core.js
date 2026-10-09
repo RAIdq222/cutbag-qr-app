@@ -3,10 +3,10 @@ const DAY = 864e5;
 /* 工程マスター: グループ・発注の要否。順番は「よくある順番」で、標準ルートはこのうち route:true のもの */
 const STAGES = [
   {id:'LO',      name:'LO', full:'LO',         kind:'work',  g:'LO',  po:true,  route:true},
-  {id:'LOEN',    name:'LO演出', full:'演出チェック',     kind:'check', g:'LO',            route:true},
+  {id:'LOEN',    name:'LO演出', full:'LO演出チェック', kind:'check', g:'LO',            route:true},
   {id:'LOSK',    name:'LO作監', full:'LO作監',     kind:'check', g:'LO',            route:true},
   {id:'GEN',     name:'原画', full:'原画',       kind:'work',  g:'原画', po:true, route:true},
-  {id:'GENEN',   name:'原画演出', full:'演出チェック',   kind:'check', g:'原画',          route:true},
+  {id:'GENEN',   name:'原画演出', full:'原画演出チェック', kind:'check', g:'原画',          route:true},
   {id:'GENSK',   name:'原画作監', full:'原画作監',   kind:'check', g:'原画',          route:true},
   {id:'GENSOSK', name:'総作監', full:'総作監', kind:'check', g:'原画',          route:false},
   {id:'DOU',     name:'動画', full:'動画',       kind:'work',  g:'動画', po:true, route:true},
