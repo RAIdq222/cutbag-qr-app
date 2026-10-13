@@ -843,3 +843,87 @@ body{background:var(--surface);overscroll-behavior:none;-webkit-tap-highlight-co
 .sess-count b{color:var(--ink);font-size:20px}
 .sess-count > span{color:var(--ink);font-size:13px;font-weight:400;margin-left:0}
 .cuthead .sub{border:0;padding:0;background:none;border-radius:0}
+
+/* ================= 2周目のレビュー（ホームの配置・行のそろえ・未入力・閉じる） ================= */
+.body.home{justify-content:center}
+.tile{--tile-bg:var(--surface);align-items:center;justify-content:center;text-align:center;gap:14px;min-height:172px;padding:18px 10px}
+.tile.main{--tile-bg:var(--accent)}
+.tile b{font-size:15.5px}
+/* 読み取りの行：工程・操作・名前の位置をそろえる */
+.sr-main{display:grid;grid-template-columns:92px 36px minmax(0,1fr);align-items:center;gap:6px}
+.sess-list li .sr-main .stg{max-width:92px;overflow:hidden;text-overflow:ellipsis;justify-self:start}
+.sess-list li .sr-main .sr-act.wide{grid-column:2 / -1}
+.sess-list li .sr-main .sr-who{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}
+.stg-ph{display:block}
+.due-btn.missing,.due-btn.empty{border:1px dashed var(--danger);color:var(--danger);font-weight:700}
+.fbtn.missing{color:var(--danger)}
+/* 閉じる：赤い枠で幅いっぱい */
+.closebtn{width:100%;border:1.5px solid var(--danger);background:var(--surface);color:var(--danger);border-radius:12px;padding:11px;font-weight:700;font-family:var(--font-disp);font-size:14px}
+/* 回収済カットの確認：行ごとに確認OK とリテイク */
+.rv-row{grid-template-columns:minmax(0,1fr) auto 40px}
+.rv-ok{border:0;border-radius:10px;background:var(--ok);color:var(--on-accent);font-weight:700;padding:0 12px;height:38px;white-space:nowrap}
+
+/* 登録したときのポップアップ */
+:root{--pop-bg:#E7F6EC;--pop-ink:#157A3C}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--pop-bg:#15321F;--pop-ink:#7DDA9C}}
+:root[data-theme="dark"]{--pop-bg:#15321F;--pop-ink:#7DDA9C}
+.donepop{position:absolute;left:24px;right:24px;top:50%;transform:translateY(-50%);z-index:8;display:flex;flex-direction:column;align-items:center;gap:14px;padding:28px 18px;border-radius:20px;border:2px solid var(--pop-ink);background:var(--pop-bg);color:var(--pop-ink);box-shadow:0 12px 32px rgba(0,0,0,.28);text-align:center;animation:pop .22s ease-out}
+.donepop b{font-family:var(--font-disp);font-size:17px;line-height:1.5;color:var(--pop-ink)}
+.donepop.sending{border-color:var(--line);background:var(--surface);color:var(--muted)}
+.donepop.sending b{color:var(--ink)}
+.donepop.err{border-color:var(--warn);background:var(--warn-soft);color:var(--warn)}
+.donepop.err b{color:var(--warn)}
+.donepop .spin{width:48px;height:48px;border-radius:50%;border:5px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pop{from{transform:translateY(-50%) scale(.92);opacity:0}to{transform:translateY(-50%) scale(1);opacity:1}}
+.pick-need{border:1px solid var(--accent);background:var(--surface);color:var(--accent);border-radius:6px;padding:2px 9px;font-size:12px;font-weight:700}
+
+/* 一覧の日付・経過・納期超過、話数担当、ダッシュボードの階層 */
+.find-row .fr-who{margin-left:8px;color:var(--muted);font-size:12px}
+.find-row .fr-dates{font-variant-numeric:tabular-nums}
+.find-row b small{display:block;font-size:10.5px;color:var(--muted);font-weight:400}
+em.aged{font-style:normal;color:var(--warn);font-weight:700;margin-left:4px}
+em.late,.late{font-style:normal;color:var(--danger);font-weight:700}
+em.late{margin-left:4px}
+.ep-owner{margin:0;font-size:12.5px;color:var(--muted)}
+.ep-owner b{color:var(--ink)}
+.ep-rows{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.ep-row{display:grid;grid-template-columns:minmax(0,1fr) 112px 14px;align-items:center;gap:8px;border:0;border-bottom:1px solid var(--line);background:none;padding:10px 0;text-align:left;color:var(--ink)}
+.ep-row .er-h{display:flex;flex-direction:column;min-width:0}
+.ep-row .er-h b{font-family:var(--font-disp);font-size:15px}
+.ep-row .er-h small{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ep-row .er-bar{display:flex;align-items:center;gap:6px}
+.ep-row .er-bar .pbar{flex:1}
+.ep-row .er-bar b{font-variant-numeric:tabular-nums;font-size:13px;min-width:34px;text-align:right}
+.ep-row .chev{color:var(--muted);font-size:18px}
+.seg.two button.on{background:var(--ink);color:var(--surface)}
+.stage-count{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.stage-count li{display:grid;grid-template-columns:118px 1fr 26px;align-items:center;gap:8px;font-variant-numeric:tabular-nums}
+.stage-count .stg{justify-self:start}
+.stage-count b{text-align:right}
+.sbar{display:flex;height:10px;border-radius:3px;background:var(--surface-2);overflow:hidden}
+.sbar i{display:block;height:100%}
+.sbar .wait,.key.wait{background:var(--accent)}.sbar .in,.key.in{background:var(--ok)}.sbar .review,.key.review{background:var(--review)}.sbar .done{background:var(--line)}
+.key{display:inline-block;width:9px;height:9px;border-radius:2px;margin:0 2px 0 6px;vertical-align:-1px}
+.dash-card .find-list{border-top:0}
+.ep-row .er-h b em.late{font-family:var(--font-ui);font-size:12px;margin-left:8px}
+
+/* カットの状況：列をそろえる・締めた行・履歴（だれが・いつ） */
+.flow2 .fl{grid-template-columns:92px minmax(0,1fr) 46px 46px 50px}
+.flow2 .fl .fl-d{text-align:right;justify-self:end}
+.flow2 .fl.lock{cursor:default}
+.flow2 .fl.can .fl-who::after{content:'›';margin-left:6px;color:var(--accent)}
+.flow-tools{display:flex;justify-content:flex-end;margin-top:-4px}
+.flow-tools .linkbtn{align-self:auto;font-size:12px}
+.hist2{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;font-size:12.5px}
+.hist2 li{display:flex;flex-direction:column;gap:2px;padding:7px 0;border-top:1px dashed var(--line)}
+.hist2 .h-meta{display:flex;flex-wrap:wrap;gap:4px 8px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.hist2 .h-meta .w{color:var(--ink);font-weight:700}
+.hist2 .via{border:1px solid var(--line);border-radius:4px;padding:0 5px}
+.hist2 .via.sheet{border-color:var(--warn);color:var(--warn)}
+.hist2 .h-what.r{color:var(--retake);font-weight:700}
+.hist2 li.void{opacity:.55;text-decoration:line-through}
+.flow2 .fl.can .fl-who::after{content:none}
+.flow2 .fl.can{box-shadow:inset 3px 0 0 var(--accent)}
+.flow2 .fl-who{white-space:normal;overflow:visible;line-height:1.35}
+.flow2 .fl-who .tagx{display:block;margin-left:0;font-size:10.5px}

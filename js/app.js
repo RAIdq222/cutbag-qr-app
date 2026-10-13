@@ -2,7 +2,7 @@
 // QRコードには個別のIDだけが入っている。どのPJ（作品のスプレッドシート）のどのカットかは、各PJの「QR管理」で決まる。
 // 端末には、そのスタッフが担当するPJを登録しておき、読み取ったIDがどのPJのものかをその場で探す。
 const CFG_KEY = 'cutbagqr.cfg', dataKey = pid => 'cutbagqr.data.' + pid;
-const DUMMY_OP = '東海林（制作進行）';
+const DUMMY_OP = '弁天太郎（制作進行）';
 const DATA_V = 2;   // データの形の版。前の形（工程が12だったころ）のデータは読まない
 let cfg = {operator:OPERATOR, org:'', projects:[], current:null, lastReg:{}};
 const PJ = {};   // PJの番号 → {S, sent, sync}
@@ -45,7 +45,8 @@ function makeState(d){
   return s;
 }
 const metaOf = s => [{key:'title', value:s.title}, {key:'code', value:s.code}, {key:'eps', value:s.eps}, {key:'people', value:s.people||[]}, {key:'v', value:DATA_V}];
-const rawOf = s => ({cuts:s.cuts, qrs:s.qrs, orders:s.orders, events:s.events, meta:metaOf(s)});
+const rawOf = s => ({cuts:s.cuts, qrs:s.qrs, orders:s.orders, events:s.events.filter(e=>!e.draft), meta:metaOf(s)});
+const committed = s => ({...s, events:s.events.filter(e=>!e.draft)});
 function markSent(pid){ const p = PJ[pid], raw = rawOf(p.S); p.sent = {}; Object.keys(KEYS).forEach(k=>{ p.sent[k] = new Map(); raw[k].forEach(x=>p.sent[k].set(x[KEYS[k]], JSON.stringify(x))); }); }
 
 /* ---------- 同期：変わったもの（履歴・カット・QR・作品の情報）だけを送り、表は作り直して送る ---------- */
@@ -64,13 +65,26 @@ async function doSync(pid){
   p.sync.pending = Object.values(changed).reduce((n,l)=>n+l.length, 0);
   try{
     // 書き込み口（Apps Script）が前の版のときは、表の形が合わないので元データだけを送る
-    await api(pr, 'upsert', {...changed, ...(p.oldGas ? {} : {tables:withS(p.S, buildTables)})});
+    await api(pr, 'upsert', {...changed, ...(p.oldGas ? {} : {tables:withS(committed(p.S), buildTables)})});
     Object.keys(KEYS).forEach(k=>changed[k].forEach(x=>p.sent[k].set(x[KEYS[k]], JSON.stringify(x))));
     p.sync = {at:Date.now(), err:null, pending:0};
-  }catch(err){ p.sync.err = err.message; setTimeout(()=>{ clearTimeout(p.timer); doSync(pid); }, 8000); }
+    // 登録のポップアップ：その読み取りの分がすべて届いたら「登録しました」にする
+    const dp = ui && ui.done;
+    if(dp && dp.pid===pid && dp.state!=='ok' && dp.nos.every(no=>p.sent.events.has(no))){ dp.state = 'ok'; renderPhone(); setTimeout(()=>{ if(ui.done===dp){ ui.done = null; renderPhone(); } }, 2500); }
+  }catch(err){
+    p.sync.err = err.message; setTimeout(()=>{ clearTimeout(p.timer); doSync(pid); }, 8000);
+    const dp = ui && ui.done; if(dp && dp.pid===pid && dp.state==='sending'){ dp.state = 'err'; renderPhone(); }
+  }
   p.syncing = false;
   if(ui && ['manage','settings'].includes(ui.screen) && !ui.modal) renderPhone();
   if(p.dirty) doSync(pid);
+}
+// 「完了（登録する）」のあとのポップアップ。書き込み先がない（端末内のデモ）ときは、すぐ「登録しました」
+function donePop(n, nos){
+  const pr = curProj();
+  ui.done = {n, nos, pid:cfg.current, state: pr && pr.endpoint ? 'sending' : 'ok'};
+  renderPhone();
+  if(ui.done.state==='ok'){ const dp = ui.done; setTimeout(()=>{ if(ui.done===dp){ ui.done = null; renderPhone(); } }, 2500); }
 }
 function syncLine(){
   const p = PJ[cfg.current], pr = curProj();
@@ -94,7 +108,7 @@ function pjLine(){
 function pjView(){
   return `<div class="sheetm" role="dialog" aria-label="作品"><h4>作品</h4>
     <div class="opts">${cfg.projects.map(p=>`<button type="button" class="opt pick${p.id===cfg.current?' sel':''}" data-pj="${esc(p.id)}">${esc(withS(PJ[p.id].S, titleOf) || p.name)}</button>`).join('')}</div>
-    <button class="linkbtn" data-a="closeModal">閉じる</button></div>`;
+    <button class="closebtn" data-a="closeModal">閉じる</button></div>`;
 }
 
 /* ---------- 担当PJ ---------- */
@@ -142,6 +156,8 @@ async function boot(){
   let preset = {};
   try{ const r = await fetch('config.json', {cache:'no-store'}); if(r.ok) preset = await r.json(); }catch(e){}
   const saved = store.get(CFG_KEY) || {};
+  // 前の版の初期値（実在の方の名前）が端末に残っていたら、今の初期値に替える
+  if(saved.operator === '\u6771\u6d77\u6797\uff08\u5236\u4f5c\u9032\u884c\uff09') saved.operator = '';
   cfg = {operator: saved.operator || OPERATOR, org: saved.org || '', current: saved.current || null, lastReg: saved.lastReg || {}, projects: []};
   const list = (preset.projects || []).filter(p=>p && p.endpoint);
   const names = saved.names || {};
@@ -165,7 +181,7 @@ function settingsView(){
   const pr = curProj(), s = PJ[cfg.current].S, list = notices();
   return `<div class="appbar">${back('home')}<h3>マイページ</h3></div>
   <div class="body settings">
-    <div class="field"><label class="lbl" for="cfgOp">名前</label><input id="cfgOp" value="${esc(cfg.operator||'')}" placeholder="例：東海林（制作進行）"></div>
+    <div class="field"><label class="lbl" for="cfgOp">名前</label><input id="cfgOp" value="${esc(cfg.operator||'')}" placeholder="例：弁天太郎（制作進行）"></div>
     <div class="field"><label class="lbl" for="cfgOrg">所属</label><input id="cfgOrg" value="${esc(cfg.org||'')}" placeholder="例：第2制作部"></div>
     <button type="button" class="act ghost" data-a="opSave">保存</button>
     <section class="home-sec"><h5>通知 <em>${list.length}件</em></h5>

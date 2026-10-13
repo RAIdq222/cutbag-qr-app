@@ -63,7 +63,7 @@ const WORKERS = {
   SHIAGE:['堀 奈々','彩色ラボ（外注）'],
 };
 // 入力者（マイページで変えられる）
-let OPERATOR = '東海林（制作進行）';
+let OPERATOR = '弁天太郎（制作進行）';
 const REASONS = ['作画修正','演出意図と違う','設定・キャラ表違い','タイミング','指示漏れ','その他'];
 const RETURN_REASONS = ['未完成','枚数が足りない','タイムシート・書類の不備','指示と違う','その他'];
 const SHELF = '社内棚（制作）';
@@ -201,6 +201,32 @@ function derive(cutId){
   d.overdue = d.phase==='in' && d.due && d.due < startOfDay(now);
   return d;
 }
+// 一覧に出す日付：今の工程の IN と納期（配布待ちは前の確認OK の日、確認待ちは UP の日）。経った日数と納期超過も
+const STALE_DAYS = 3;
+function cutDates(d){
+  const x = d.cells[d.sid] || {}, now = clock();
+  const days = t => t ? Math.floor((startOfDay(now) - startOfDay(t))/DAY) : null;
+  if(d.phase==='done') return {label:'完了', at:d.lastTs};
+  if(d.phase==='wait') return {label:'配布待ち', at:d.lastTs, days:days(d.lastTs)};
+  if(d.phase==='review') return {label:'UP', at:d.since, days:days(d.since)};
+  const inAt = (d.open || d.ret) && x.rin ? x.rin : x.in;
+  return {label:'IN', at:inAt, days:days(inAt), due:d.due, over:d.overdue};
+}
+const epOwner = ep => (epInfo(ep).staff||{}).進行 || '';
+// アプリで入力できる工程。終わった工程は締める（さかのぼって直さない。直すときはスプレッドシートで）
+//   wait：今の工程の配布待ち（担当・納期・IN）／in：作業中・チェック中（担当・納期・IN・UP）／plan：先の工程（担当・納期の予定）
+function editMode(d, sid){
+  if(d.phase==='done') return null;
+  const i = d.route.indexOf(sid), cur = d.route.indexOf(d.sid);
+  if(i < cur) return null;
+  if(i > cur) return 'plan';
+  return d.phase==='wait' ? 'wait' : d.phase==='in' ? 'in' : null;
+}
+// 前の工程が上がった日（IN はこれより前にできない）
+function prevUp(d, sid){
+  const i = d.route.indexOf(sid); if(i<=0) return null;
+  const x = d.cells[d.route[i-1]] || {}; return x.rup || x.up || null;
+}
 function statusOf(d){
   if(d.phase==='done') return {k:'done', t:'完了'};
   if(d.phase==='review') return {k:'review', t:'確認待ち'};
@@ -332,8 +358,8 @@ const SPARE_QR = ['QS4K8TA','QS7M2PD','QS9R3XE','QS2V6NH','QS5W8JL','QS3B9QM','Q
 /* ================= 初期データ ================= */
 function seedEps(){
   return [
-    {ep:'#01', staff:{演出:'川上（演出）', 監督:'北村（監督）', 作監:{A:'西村（作監）', B:'中島（作監）'}, 総作監:'南（総作監）', キャラデ総作監:'南（総作監）', 動検:'大野（動検）', セル検:'村井（セル検）', 撮影:'内田 翔', 進行:'東海林（制作進行）'}},
-    {ep:'#02', staff:{演出:'佐藤（演出）', 監督:'北村（監督）', 作監:{A:'中島（作監）', B:'西村（作監）'}, 総作監:'南（総作監）', キャラデ総作監:'南（総作監）', 動検:'石田（動検）', セル検:'村井（セル検）', 撮影:'内田 翔', 進行:'東海林（制作進行）'}},
+    {ep:'#01', staff:{演出:'川上（演出）', 監督:'北村（監督）', 作監:{A:'西村（作監）', B:'中島（作監）'}, 総作監:'南（総作監）', キャラデ総作監:'南（総作監）', 動検:'大野（動検）', セル検:'村井（セル検）', 撮影:'内田 翔', 進行:'弁天太郎（制作進行）'}},
+    {ep:'#02', staff:{演出:'佐藤（演出）', 監督:'北村（監督）', 作監:{A:'中島（作監）', B:'西村（作監）'}, 総作監:'南（総作監）', キャラデ総作監:'南（総作監）', 動検:'石田（動検）', セル検:'村井（セル検）', 撮影:'内田 翔', 進行:'毘沙門次郎（制作進行）'}},
   ];
 }
 function seed(){
@@ -409,7 +435,7 @@ function seed(){
   let r = 0; S.events.forEach(e=>{ if(e.type==='RETAKE'){ e.rt.id = 'R'+String(++r).padStart(3,'0'); } }); S.rtSeq = r;
 
   // 発注書（読み取り専用で取り込んだもの）。これまでの配布は、作業者×作業内容×話数ごとの発注書に紐づける
-  const newOrder = (sid, vendor, ep, date, due, lines) => { const w = WORK[sid]; const o = {no:'1012600'+pad(++S.poSeq), date, staff:'東海林', vendor, stage:sid, ep, work:w.name, unit:w.unit, price:w.price, due, lines}; S.orders.push(o); return o; };
+  const newOrder = (sid, vendor, ep, date, due, lines) => { const w = WORK[sid]; const o = {no:'1012600'+pad(++S.poSeq), date, staff:'弁天', vendor, stage:sid, ep, work:w.name, unit:w.unit, price:w.price, due, lines}; S.orders.push(o); return o; };
   const sheetsOf = (cutNo, sid) => sid==='DOU' || sid==='SHIAGE' ? 30 + (Number(cutNo.slice(1))*7)%25 : null;
   const groups = new Map();
   S.events.forEach(e=>{ if(e.type!=='IN' || !ST[e.stage].po) return; const c = cutById(e.cut); const k = e.stage+'|'+e.person+'|'+c.ep; if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(e); });
@@ -456,9 +482,9 @@ function table(head, rows, opt={}){
 // 話数ごとの進捗表の列（Excel の進捗表と同じ並び。各工程に担当と納期を足している）
 function progColumns(){
   const cols = [];
-  const add = (g, h, get) => cols.push({g, h, get});
+  const add = (g, h, get, key) => cols.push({g, h, get, key:key||null});
   ['C＃','パート'].forEach((h,i)=>add('', h, (c)=>({v: i ? c.part : c.no})));
-  add('', 'LO担当', (c,d)=>{ const x = d.cells.LO||{}; return {v:x.person||'', f:fontOf(x.personSrc)}; });
+  add('', 'LO担当', (c,d)=>{ const x = d.cells.LO||{}; return {v:x.person||'', f:fontOf(x.personSrc)}; }, 'LO|person');
   ['兼用','特効','2D','3D','3DLO','写真LO','全セル','BG ONLY','設計戻し','セルBANK','再撮BANK','編集BANK','欠番','備考'].forEach(h=>add('', h, ()=>({v:''})));
   add('', '現状', (c,d)=>({v:stateText(d), f:FONT.calc, b:BG[d.stale && d.phase==='in' ? 'stale' : statusOf(d).k]}));
   const now = clock(), today = startOfDay(now);
@@ -467,15 +493,15 @@ function progColumns(){
       const x = (c,d) => d.cells[s.id] || {};
       const on = (c,d) => d.route.includes(s.id);
       if(s.who==='sakkan') add(g, `${s.name}（記号）`, (c,d)=>({v: on(c,d) ? ((c.sk||{})[s.g]||'') : ''}));
-      if(s.who==='worker' && s.id!=='LO') add(g, `${s.name}作業者`, (c,d)=>({v:x(c,d).person||'', f:fontOf(x(c,d).personSrc)}));
-      add(g, `${s.name}IN`, (c,d)=>({v:fD(x(c,d).in)}));
+      if(s.who==='worker' && s.id!=='LO') add(g, `${s.name}作業者`, (c,d)=>({v:x(c,d).person||'', f:fontOf(x(c,d).personSrc)}), `${s.id}|person`);
+      add(g, `${s.name}IN`, (c,d)=>({v:fD(x(c,d).in)}), `${s.id}|in`);
       // IN から7日たっても UP が空なら、UP のセルに色を付ける（Excel と同じ）
-      add(g, `${s.name}UP`, (c,d)=>{ const y = x(c,d); return {v:fD(y.up), b: y.in && !y.up && now - y.in >= 7*DAY ? BG.stale : ''}; });
-      add(g, `${s.name}納期`, (c,d)=>{ const y = x(c,d), open = (y.rin ? !y.rup : !y.up); return {v:fD(y.due), f:fontOf(y.dueSrc), b: y.due && open && y.due < today && (y.in||y.rin) ? BG.over : ''}; });
+      add(g, `${s.name}UP`, (c,d)=>{ const y = x(c,d); return {v:fD(y.up), b: y.in && !y.up && now - y.in >= 7*DAY ? BG.stale : ''}; }, `${s.id}|up`);
+      add(g, `${s.name}納期`, (c,d)=>{ const y = x(c,d), open = (y.rin ? !y.rup : !y.up); return {v:fD(y.due), f:fontOf(y.dueSrc), b: y.due && open && y.due < today && (y.in||y.rin) ? BG.over : ''}; }, `${s.id}|due`);
       if(s.kind==='check') add(g, `${s.name}リテイク中`, (c,d)=>({v:fD(x(c,d).rtc), b:x(c,d).rtc ? BG.retake : ''}));
-      add(g, `${s.name}リテイクIN`, (c,d)=>({v:fD(x(c,d).rin), b: x(c,d).rin && !x(c,d).rup ? BG.retake : ''}));
-      add(g, `${s.name}リテイクUP`, (c,d)=>({v:fD(x(c,d).rup)}));
-      if(s.kind==='work') add(g, `${s.name}枚数`, (c,d)=>({v:x(c,d).sheets ?? '', f:fontOf(x(c,d).sheetsSrc)}));
+      add(g, `${s.name}リテイクIN`, (c,d)=>({v:fD(x(c,d).rin), b: x(c,d).rin && !x(c,d).rup ? BG.retake : ''}), `${s.id}|rin`);
+      add(g, `${s.name}リテイクUP`, (c,d)=>({v:fD(x(c,d).rup)}), `${s.id}|rup`);
+      if(s.kind==='work') add(g, `${s.name}枚数`, (c,d)=>({v:x(c,d).sheets ?? '', f:fontOf(x(c,d).sheetsSrc)}), `${s.id}|sheets`);
     });
     (SIDE_COLS[g]||[]).forEach(h=>add(g, h, ()=>({v:''})));
   });
@@ -491,8 +517,12 @@ function progTable(ep){
   const row1 = [], merges = [];
   cols.forEach((c,i)=>{ row1.push(i>0 && cols[i-1].g===c.g ? '' : c.g); });
   for(let i=0; i<cols.length; ){ let j=i; while(j+1<cols.length && cols[j+1].g===cols[i].g) j++; if(cols[i].g && j>i) merges.push([0, i, j-i+1]); i = j+1; }
-  const rows = S.cuts.filter(c=>c.ep===ep).sort((a,b)=>a.no.localeCompare(b.no)).map(c=>{ const d = derive(c.id); return {cells: cols.map(col=>col.get(c, d))}; });
-  return table(null, rows, {heads:[row1, cols.map(c=>c.h)], merges, freezeCols:1});
+  const cuts = S.cuts.filter(c=>c.ep===ep).sort((a,b)=>a.no.localeCompare(b.no));
+  const rows = cuts.map(c=>{ const d = derive(c.id); return {cells: cols.map(col=>col.get(c, d))}; });
+  const t = table(null, rows, {heads:[row1, cols.map(c=>c.h)], merges, freezeCols:1});
+  // スプレッドシートで直接直したとき、どのカットのどの工程の値かを Apps Script が分かるように
+  t.map = {cols: cols.map(c=>c.key), cuts: cuts.map(c=>c.id)};
+  return t;
 }
 function orderRowStatus(x, linked){
   if(!x.cut){ const lk = linked.get(x.o.no+'|'+x.li); return lk ? {t:`仮紐づけ（${cutById(lk).no}）`, k:'stale'} : {t:'カットNo.不明', k:'over'}; }
@@ -503,7 +533,8 @@ function orderRowStatus(x, linked){
   const passed = d.phase==='done' || d.route.indexOf(d.sid) > d.route.indexOf(x.o.stage);
   return passed ? {t:'確認OK', k:'in'} : {t:'配布済', k:'in'};
 }
-const TYPE_NAME = {IN:'配布', UP:'回収', OK:'確認OK', RETURN:'差し戻し', RETAKE:'リテイク', VOID:'取り消し', ALERT:'旧ラベル', LINK:'QR登録', SET:'流れを直す', ROUTE:'通す工程を変更', REQ:'発注書の更新依頼'};
+const FIELD_NAME = {in:'IN', up:'UP', due:'納期', person:'担当', sheets:'枚数', rin:'リテイクIN', rup:'リテイクUP'};
+const TYPE_NAME = {IN:'配布', UP:'回収', OK:'確認OK', RETURN:'差し戻し', RETAKE:'リテイク', VOID:'取り消し', ALERT:'旧ラベル', LINK:'QR登録', SET:'入力', ROUTE:'工程の追加・削除', REQ:'発注書の更新依頼'};
 function buildTables(){
   const out = {};
   epsOf().forEach(ep=>{ out[ep] = progTable(ep); });
@@ -518,15 +549,15 @@ function buildTables(){
   }
   // 履歴ログ（1件1行。リテイク・差し戻しも、ここに理由・指摘した人・納期を書く）
   {
-    const head = ['No','実施日時','入力日時','話数','C＃','操作','工程','担当','納期','発注番号','リテイク','理由','指摘した工程','指摘した人','備考','入力者'];
+    const head = ['No','実施日時','入力日時','話数','C＃','操作','工程','担当','納期','発注番号','リテイク','理由','指摘した工程','指摘した人','備考','入力者','経路'];
     const voided = voidedSet();
     const rows = S.events.map(e=>{ const c = cutById(e.cut) || {};
       const rt = e.rt || null;
-      const stg = e.type==='SET' ? `${nameOf(e.stage)}（${{in:'IN',up:'UP',due:'納期',person:'担当',sheets:'枚数'}[e.field]||e.field}）` : nameOf(e.stage);
-      const note = e.type==='VOID' ? `No.${e.voidOf} を取り消し` : e.type==='SET' ? `${e.field==='due'||e.field==='in'||e.field==='up' ? fD(e.value) : e.value} にした` : e.type==='ROUTE' ? `通す工程：${e.route.map(nameOf).join('→')}` : e.note;
+      const stg = e.type==='SET' ? `${nameOf(e.stage)}（${FIELD_NAME[e.field]||e.field}）` : nameOf(e.stage);
+      const note = e.type==='VOID' ? `No.${e.voidOf} を取り消し` : e.type==='SET' ? `${['due','in','up','rin','rup'].includes(e.field) ? (fD(e.value)||'空') : (e.value ?? '空')} にした` : e.type==='ROUTE' ? `工程：${e.route.map(nameOf).join('→')}` : e.note;
       return {strike:voided.has(e.no), cells:[{v:e.no},{v:fDT(e.ts)},{v:e.late?fDT(e.ets):''},{v:c.ep||''},{v:c.no||''},{v:TYPE_NAME[e.type]||e.type, b: rt ? BG.retake : e.type==='ALERT' ? BG.over : ''},
         {v:stg},{v:['IN','RETAKE','RETURN'].includes(e.type)?e.person:'', f: e.type==='IN' ? fontOf(e.src) : ''},{v:fD(e.due), f: e.type==='IN' ? fontOf(e.dueSrc) : ''},{v:e.po?(e.po+(e.provisional?'（仮）':'')):''},
-        {v:rt?rt.id:''},{v:rt?rt.reason:''},{v:rt ? nameOf(rt.raised||rt.stage) : ''},{v:rt ? (rt.by||'') : ''},{v:note||''},{v:e.op}]}; });
+        {v:rt?rt.id:''},{v:rt?rt.reason:''},{v:rt ? nameOf(rt.raised||rt.stage) : ''},{v:rt ? (rt.by||'') : ''},{v:note||''},{v:e.op},{v:e.via==='sheet'?'スプレッドシート':'アプリ'}]}; });
     out['履歴ログ'] = table(head, rows);
   }
   // 話数の担当（演出・監督・作監の記号など。チェック工程の担当はここから決まる）
