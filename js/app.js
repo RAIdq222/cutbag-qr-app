@@ -68,7 +68,8 @@ async function doSync(pid){
     // 話数のシートは、アプリで変えたカットの行だけを書く（人がスプレッドシートで直したセルを上書きしない）
     const sheetCuts = p.sheetCuts || new Set();
     const touched = p.fullNext ? null : new Set([...changed.events.map(e=>e.cut), ...changed.cuts.map(c=>c.id), ...changed.qrs.map(q=>q.cut), ...sheetCuts]);
-    const j = await api(pr, 'upsert', {...changed, ...(p.oldGas ? {} : {tables:withS(committed(p.S), ()=>buildTables(touched))})});
+    // ふだんの送信は、話数のシートの行（データ）だけ。表を作り直すのは初期化のときと、全部の行を送り直すときだけ
+    const j = await api(pr, 'upsert', {...changed, ...(p.oldGas ? {} : {tables:withS(committed(p.S), ()=>buildTables(touched)), dataOnly: !!touched})});
     afterWrite(pid, j.rebuilt);
     Object.keys(KEYS).forEach(k=>changed[k].forEach(x=>p.sent[k].set(x[KEYS[k]], JSON.stringify(x))));
     sheetCuts.forEach(id=>p.sheetCuts.delete(id));

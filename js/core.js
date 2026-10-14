@@ -591,9 +591,11 @@ function reportTable(ep, kind){
   return {report:kind, ver:REPORT_VER, inputs:reportInputs(ep, kind),
     refs:{進捗表:ep, ...Object.fromEntries(REPORT_SHEETS.map(k=>[k, reportName(ep, k)]))}};
 }
+// 日報・週次UP数のシートは、いったん作らない（作る処理を軽くしてから戻す）
+let REPORTS_ON = false;
 function buildTables(only){
   const out = {};
-  epsOf().forEach(ep=>{ out[ep] = progTable(ep, only); REPORT_SHEETS.forEach(k=>{ out[reportName(ep, k)] = reportTable(ep, k); }); });
+  epsOf().forEach(ep=>{ out[ep] = progTable(ep, only); if(REPORTS_ON) REPORT_SHEETS.forEach(k=>{ out[reportName(ep, k)] = reportTable(ep, k); }); });
   // 発注管理（発注書から取り込んだもの。発注書は書き換えない）
   {
     const head = ['発注番号','発注日','発注先','作業内容','話数','カットNo.（記載）','紐づけ','枚','単価方式','単価','金額','納品期日','状態'];
