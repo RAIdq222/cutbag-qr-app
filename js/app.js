@@ -92,8 +92,10 @@ function afterWrite(pid, rebuilt){
   p.fullTries = prog.length ? (p.fullTries||0) + 1 : 0;
   p.fullNext = prog.length > 0 && p.fullTries <= 2;
   if(p.fullNext) setTimeout(()=>doSync(pid), 300);
-  if(rep.length) buildReports(pid, rep);
+  // 日報などを作る送信は重く、ほかの送信を待たせるので、いったん止める（作り方を軽くしてから戻す）
+  if(rep.length && BUILD_REPORTS) buildReports(pid, rep);
 }
+const BUILD_REPORTS = false;
 // 日報・週次UP数のシートを作る（時間がかかるので、ふだんの送信とは分けて、作れるだけ作って続ける）
 async function buildReports(pid, names){
   const p = PJ[pid], pr = projOf(pid);
