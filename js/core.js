@@ -479,50 +479,61 @@ function table(head, rows, opt={}){
   rows.forEach(r=>put(r.cells, r));
   return {values, font, bg, strike, merges:opt.merges||[], freeze:(opt.heads||[head]).length, freezeCols:opt.freezeCols ?? 1, protect:!!opt.protect};
 }
-// 話数ごとの進捗表の列（Excel の進捗表と同じ並び。各工程に担当と納期を足している）
-function progColumns(){
-  const cols = [];
-  const add = (g, h, get, key) => cols.push({g, h, get, key:key||null});
-  ['C＃','パート'].forEach((h,i)=>add('', h, (c)=>({v: i ? c.part : c.no})));
-  add('', 'LO担当', (c,d)=>{ const x = d.cells.LO||{}; return {v:x.person||'', f:fontOf(x.personSrc)}; }, 'LO|person');
-  ['兼用','特効','2D','3D','3DLO','写真LO','全セル','BG ONLY','設計戻し','セルBANK','再撮BANK','編集BANK','欠番','備考'].forEach(h=>add('', h, ()=>({v:''})));
-  add('', '現状', (c,d)=>({v:stateText(d), f:FONT.calc, b:BG[d.stale && d.phase==='in' ? 'stale' : statusOf(d).k]}));
-  const now = clock(), today = startOfDay(now);
-  GROUPS.forEach(g=>{
-    STAGES.filter(s=>s.g===g).forEach(s=>{
-      const x = (c,d) => d.cells[s.id] || {};
-      const on = (c,d) => d.route.includes(s.id);
-      if(s.who==='sakkan') add(g, `${s.name}（記号）`, (c,d)=>({v: on(c,d) ? ((c.sk||{})[s.g]||'') : ''}));
-      if(s.who==='worker' && s.id!=='LO') add(g, `${s.name}作業者`, (c,d)=>({v:x(c,d).person||'', f:fontOf(x(c,d).personSrc)}), `${s.id}|person`);
-      add(g, `${s.name}IN`, (c,d)=>({v:fD(x(c,d).in)}), `${s.id}|in`);
-      // IN から7日たっても UP が空なら、UP のセルに色を付ける（Excel と同じ）
-      add(g, `${s.name}UP`, (c,d)=>{ const y = x(c,d); return {v:fD(y.up), b: y.in && !y.up && now - y.in >= 7*DAY ? BG.stale : ''}; }, `${s.id}|up`);
-      add(g, `${s.name}納期`, (c,d)=>{ const y = x(c,d), open = (y.rin ? !y.rup : !y.up); return {v:fD(y.due), f:fontOf(y.dueSrc), b: y.due && open && y.due < today && (y.in||y.rin) ? BG.over : ''}; }, `${s.id}|due`);
-      if(s.kind==='check') add(g, `${s.name}リテイク中`, (c,d)=>({v:fD(x(c,d).rtc), b:x(c,d).rtc ? BG.retake : ''}));
-      add(g, `${s.name}リテイクIN`, (c,d)=>({v:fD(x(c,d).rin), b: x(c,d).rin && !x(c,d).rup ? BG.retake : ''}), `${s.id}|rin`);
-      add(g, `${s.name}リテイクUP`, (c,d)=>({v:fD(x(c,d).rup)}), `${s.id}|rup`);
-      if(s.kind==='work') add(g, `${s.name}枚数`, (c,d)=>({v:x(c,d).sheets ?? '', f:fontOf(x(c,d).sheetsSrc)}), `${s.id}|sheets`);
-    });
-    (SIDE_COLS[g]||[]).forEach(h=>add(g, h, ()=>({v:''})));
-  });
-  add('本撮', 'CT撮線撮尺（秒）', (c)=>({v:String(c.sec||'').split('+')[0]||'', f:FONT.calc}));
-  add('本撮', 'CT撮線撮尺（コマ）', (c)=>({v:String(c.sec||'').split('+')[1]||'', f:FONT.calc}));
-  add('本撮', 'DB前撮線撮尺（秒）', ()=>({v:''}));
-  add('本撮', 'DB前撮線撮尺（コマ）', ()=>({v:''}));
-  add('本撮', '本撮備考', ()=>({v:''}));
-  return cols;
+// 話数のシート：作品の進捗表（Excel）の型（SHEET_TEMPLATE）のまま。列・見出し・色・書式は元の Excel と同じ。
+// アプリが書くのは、型で意味を決めた列（各工程の IN・UP・リテイク・枚数・作業者など）だけ。ほかのセル（備考・印・人の書式）には触らない。
+// 元の Excel にない「現状」と各工程の「納期」は、右端（本撮のうしろ）にまとめる。
+const DUE_STAGES = STAGES.map(s=>s.id);
+function progTemplate(){
+  const T = SHEET_TEMPLATE, light = '#E8EDF5';
+  const extra = [{c:'', h:['アプリ（現状・納期）','現状',''], w:16, fill:[light,light,light], font:[[10,true,null],[10,false,null],[10,false,null]], wrap:[false,true,false], fmt:'General', key:'cut|state'}]
+    .concat(DUE_STAGES.map(id=>({c:'', h:['', `${nameOf(id)}納期`, ''], w:7, fill:[light,light,light], font:[[10,false,null],[10,false,null],[10,false,null]], wrap:[false,true,false], fmt:'m"月"d"日";@', key:`${id}|due`})));
+  const cols = T.cols.concat(extra);
+  return {heads:T.heads, freezeCols:T.freezeCols, heights:T.heights, cols, merges:T.merges.concat([[1, T.cols.length+1, 1, extra.length]])};
 }
+// C＃ は元の Excel と同じく数字（C001 → 1、枝番は 12A のまま）
+const sheetNo = no => { const m = String(no).match(/^C0*(\d+)([A-Z]?)$/); return m ? (m[2] ? m[1]+m[2] : Number(m[1])) : no; };
+const dCell = t => t ? 'D:' + ymd(t) : '';
+function progCell(key, c, d){
+  const [sid, f] = key.split('|');
+  if(sid==='cut'){
+    if(f==='no') return {v:sheetNo(c.no)};
+    if(f==='part') return {v:c.part||''};
+    if(f==='sec_s') return {v:String(c.sec||'').split('+')[0]||''};
+    if(f==='sec_f') return {v:String(c.sec||'').split('+')[1]||''};
+    if(f==='state') return {v:stateText(d), f:FONT.calc, b:BG[d.stale && d.phase==='in' ? 'stale' : statusOf(d).k]};
+  }
+  const x = d.cells[sid] || {}, on = d.route.includes(sid);
+  if(f==='sk') return {v: on ? ((c.sk||{})[ST[sid].g]||'') : ''};
+  if(f==='person') return {v:x.person||'', f:fontOf(x.personSrc)};
+  if(f==='sheets') return {v:x.sheets ?? '', f:fontOf(x.sheetsSrc)};
+  if(f==='due'){ const open = x.rin ? !x.rup : !x.up; return {v:dCell(x.due), f:fontOf(x.dueSrc), b: x.due && open && (x.in||x.rin) && x.due < startOfDay(clock()) ? BG.over : ''}; }
+  return {v:dCell(x[f])};
+}
+const CREATE_ONLY = ['cut|no','cut|part','cut|sec_s','cut|sec_f'];
 function progTable(ep){
-  const cols = progColumns();
-  const row1 = [], merges = [];
-  cols.forEach((c,i)=>{ row1.push(i>0 && cols[i-1].g===c.g ? '' : c.g); });
-  for(let i=0; i<cols.length; ){ let j=i; while(j+1<cols.length && cols[j+1].g===cols[i].g) j++; if(cols[i].g && j>i) merges.push([0, i, j-i+1]); i = j+1; }
+  const tpl = progTemplate(), cols = tpl.cols;
   const cuts = S.cuts.filter(c=>c.ep===ep).sort((a,b)=>a.no.localeCompare(b.no));
-  const rows = cuts.map(c=>{ const d = derive(c.id); return {cells: cols.map(col=>col.get(c, d))}; });
-  const t = table(null, rows, {heads:[row1, cols.map(c=>c.h)], merges, freezeCols:1});
-  // スプレッドシートで直接直したとき、どのカットのどの工程の値かを Apps Script が分かるように
-  t.map = {cols: cols.map(c=>c.key), cuts: cuts.map(c=>c.id)};
-  return t;
+  const owned = cols.map((c,i)=>c.key && !CREATE_ONLY.includes(c.key) ? i : -1).filter(i=>i>=0);
+  const create = cols.map((c,i)=>CREATE_ONLY.includes(c.key) ? i : -1).filter(i=>i>=0);
+  const rows = cuts.map(c=>{ const d = derive(c.id);
+    return {no:sheetNo(c.no), id:c.id, create:create.map(i=>[i, progCell(cols[i].key, c, d).v]), cells:owned.map(i=>{ const x = progCell(cols[i].key, c, d); return [i, x.v ?? '', x.f||'', x.b||'']; })}; });
+  // IN から7日たっても UP が空なら UP のセルに色（元の Excel の条件付き書式と同じ）
+  const idx = k => cols.findIndex(c=>c.key===k);
+  const cf = STAGES.map(s=>[idx(`${s.id}|in`), idx(`${s.id}|up`)]).filter(([a,b])=>a>=0 && b>=0);
+  const prefix = `${S.code||'SMP'}-${epNum(ep)}-`;
+  return {prog:true, template:tpl, owned, rows, cf, prefix, freeze:tpl.heads, freezeCols:tpl.freezeCols, protect:false,
+    map:{cols:cols.map(c=>c.key), prefix, heads:tpl.heads}};
+}
+// 話数のシートを、スプレッドシートの見た目のとおりの表にする（テスト・画面の画像・ダミーの xlsx で使う）
+function tableGrid(t){
+  if(!t.prog) return t;
+  const cols = t.template.cols, w = cols.length, H = t.template.heads;
+  const values = [0,1,2].map(r=>cols.map(c=>c.h[r]||'')), font = [0,1,2].map(r=>cols.map(c=>c.font[r][2]||'')), bg = [0,1,2].map(r=>cols.map(c=>c.fill[r]||''));
+  const show = v => typeof v==='string' && v.startsWith('D:') ? `${Number(v.slice(7,9))}月${Number(v.slice(10,12))}日` : v;
+  t.rows.forEach(r=>{ const vr = new Array(w).fill(''), fr = new Array(w).fill(''), br = new Array(w).fill('');
+    r.create.forEach(([i,v])=>{ vr[i] = v; }); r.cells.forEach(([i,v,f,b])=>{ vr[i] = show(v); fr[i] = f; br[i] = b; });
+    values.push(vr); font.push(fr); bg.push(br); });
+  return {values, font, bg, merges:t.template.merges.map(([r,c,h,ww])=>[r-1,c-1,ww,h]), freeze:H, freezeCols:t.freezeCols, protect:false, widths:cols.map(c=>c.w)};
 }
 function orderRowStatus(x, linked){
   if(!x.cut){ const lk = linked.get(x.o.no+'|'+x.li); return lk ? {t:`仮紐づけ（${cutById(lk).no}）`, k:'stale'} : {t:'カットNo.不明', k:'over'}; }
