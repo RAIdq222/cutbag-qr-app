@@ -65,7 +65,11 @@ async function doSync(pid){
   p.sync.pending = Object.values(changed).reduce((n,l)=>n+l.length, 0);
   try{
     // 書き込み口（Apps Script）が前の版のときは、表の形が合わないので元データだけを送る
-    await api(pr, 'upsert', {...changed, ...(p.oldGas ? {} : {tables:withS(committed(p.S), buildTables)})});
+    // 話数のシートは、アプリで変えたカットの行だけを書く（人がスプレッドシートで直したセルを上書きしない）
+    const touched = p.fullNext ? null : new Set([...changed.events.map(e=>e.cut), ...changed.cuts.map(c=>c.id), ...changed.qrs.map(q=>q.cut)]);
+    const j = await api(pr, 'upsert', {...changed, ...(p.oldGas ? {} : {tables:withS(committed(p.S), ()=>buildTables(touched))})});
+    p.fullNext = !!(j.rebuilt && j.rebuilt.length);   // 見出しから作り直したシートには、次の送信で全部の行を書く
+    if(p.fullNext) setTimeout(()=>doSync(pid), 300);
     Object.keys(KEYS).forEach(k=>changed[k].forEach(x=>p.sent[k].set(x[KEYS[k]], JSON.stringify(x))));
     p.sync = {at:Date.now(), err:null, pending:0};
     // 登録のポップアップ：その読み取りの分がすべて届いたら「登録しました」にする

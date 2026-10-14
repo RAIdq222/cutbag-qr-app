@@ -510,9 +510,10 @@ function progCell(key, c, d){
   return {v:dCell(x[f])};
 }
 const CREATE_ONLY = ['cut|no','cut|part','cut|sec_s','cut|sec_f'];
-function progTable(ep){
+// only：送るカットの ID の集まり（ふだんの送信は、アプリで変えたカットだけ。スプレッドシートで人が直したセルを上書きしないため）
+function progTable(ep, only){
   const tpl = progTemplate(), cols = tpl.cols;
-  const cuts = S.cuts.filter(c=>c.ep===ep).sort((a,b)=>a.no.localeCompare(b.no));
+  const cuts = S.cuts.filter(c=>c.ep===ep && (!only || only.has(c.id))).sort((a,b)=>a.no.localeCompare(b.no));
   const owned = cols.map((c,i)=>c.key && !CREATE_ONLY.includes(c.key) ? i : -1).filter(i=>i>=0);
   const create = cols.map((c,i)=>CREATE_ONLY.includes(c.key) ? i : -1).filter(i=>i>=0);
   const rows = cuts.map(c=>{ const d = derive(c.id);
@@ -521,7 +522,7 @@ function progTable(ep){
   const idx = k => cols.findIndex(c=>c.key===k);
   const cf = STAGES.map(s=>[idx(`${s.id}|in`), idx(`${s.id}|up`)]).filter(([a,b])=>a>=0 && b>=0);
   const prefix = `${S.code||'SMP'}-${epNum(ep)}-`;
-  return {prog:true, template:tpl, owned, rows, cf, prefix, freeze:tpl.heads, freezeCols:tpl.freezeCols, protect:false,
+  return {prog:true, partial:!!only, template:tpl, owned, rows, cf, prefix, freeze:tpl.heads, freezeCols:tpl.freezeCols, protect:false,
     map:{cols:cols.map(c=>c.key), prefix, heads:tpl.heads}};
 }
 // 話数のシートを、スプレッドシートの見た目のとおりの表にする（テスト・画面の画像・ダミーの xlsx で使う）
@@ -546,9 +547,9 @@ function orderRowStatus(x, linked){
 }
 const FIELD_NAME = {in:'IN', up:'UP', due:'納期', person:'担当', sheets:'枚数', rin:'リテイクIN', rup:'リテイクUP'};
 const TYPE_NAME = {IN:'配布', UP:'回収', OK:'確認OK', RETURN:'差し戻し', RETAKE:'リテイク', VOID:'取り消し', ALERT:'旧ラベル', LINK:'QR登録', SET:'入力', ROUTE:'工程の追加・削除', REQ:'発注書の更新依頼'};
-function buildTables(){
+function buildTables(only){
   const out = {};
-  epsOf().forEach(ep=>{ out[ep] = progTable(ep); });
+  epsOf().forEach(ep=>{ out[ep] = progTable(ep, only); });
   // 発注管理（発注書から取り込んだもの。発注書は書き換えない）
   {
     const head = ['発注番号','発注日','発注先','作業内容','話数','カットNo.（記載）','紐づけ','枚','単価方式','単価','金額','納品期日','状態'];
