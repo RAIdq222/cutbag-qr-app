@@ -493,11 +493,20 @@ function table(head, rows, opt={}){
 const DUE_STAGES = STAGES.map(s=>s.id);
 function progTemplate(){
   const T = SHEET_TEMPLATE, light = '#E8EDF5';
-  const extra = [{c:'', h:['アプリ（現状・納期）','現状',''], w:16, fill:[light,light,light], font:[[10,true,null],[10,false,null],[10,false,null]], wrap:[false,true,false], fmt:'General', key:'cut|state'}]
-    .concat(DUE_STAGES.map(id=>({c:'', h:['', `${nameOf(id)}納期`, ''], w:7, fill:[light,light,light], font:[[10,false,null],[10,false,null],[10,false,null]], wrap:[false,true,false], fmt:'m"月"d"日";@', key:`${id}|due`})));
+  // 右端の列（元の Excel にない）は、全部をグループにしてたたむ。A〜FI は元の Excel のまま
+  const B = 'SOLID:#000000';
+  const hs = (bold, fmt) => [light, '#000000', bold, 10, 'MS PGothic', 'center', 'center', true, 0, fmt, B, B, B, B];
+  const body = fmt => [null, '#000000', false, 10, 'MS PGothic', 'center', 'center', false, 0, fmt, B, B, B, B];
+  const ex = (h, w, key, fmt) => ({c:'', h, w, fill:[light,light,light], font:[[10,true,null],[10,false,null],[10,false,null]], wrap:[false,true,false], fmt, key, lvl:1, hide:true,
+    hs:[hs(true, 'General'), hs(false, 'General'), hs(false, 'General')], body:body(fmt)});
+  const extra = [ex(['アプリ（現状・納期）','現状',''], 16, 'cut|state', 'General')]
+    .concat(DUE_STAGES.map(id=>ex(['', `${nameOf(id)}納期`, ''], 7, `${id}|due`, 'm"月"d"日";@')));
   const cols = T.cols.concat(extra);
-  return {heads:T.heads, freezeCols:T.freezeCols, heights:T.heights, cols, merges:T.merges.concat([[1, T.cols.length+1, 1, extra.length]])};
+  return {heads:T.heads, freezeRows:T.freezeRows, freezeCols:T.freezeCols, filterRow:T.filterRow, heights:T.heights, bodyHeight:T.bodyHeight, mdw:T.mdw, cf:T.cf,
+    cols, merges:T.merges.concat([[1, T.cols.length+1, 1, extra.length]])};
 }
+// 一部の行だけを送るときの型（見た目の型 hs・body を外して軽くする。シートを作るときは全部を送る）
+function progTemplateLite(tpl){ return {...tpl, cols:tpl.cols.map(({hs, body, ...c})=>c)}; }
 // C＃ は元の Excel と同じく数字（C001 → 1、枝番は 12A のまま）
 const sheetNo = no => { const m = String(no).match(/^C0*(\d+)([A-Z]?)$/); return m ? (m[2] ? m[1]+m[2] : Number(m[1])) : no; };
 const dCell = t => t ? 'D:' + ymd(t) : '';
@@ -526,11 +535,8 @@ function progTable(ep, only){
   const create = cols.map((c,i)=>CREATE_ONLY.includes(c.key) ? i : -1).filter(i=>i>=0);
   const rows = cuts.map(c=>{ const d = derive(c.id);
     return {no:sheetNo(c.no), id:c.id, create:create.map(i=>[i, progCell(cols[i].key, c, d).v]), cells:owned.map(i=>{ const x = progCell(cols[i].key, c, d); return [i, x.v ?? '', x.f||'', x.b||'']; })}; });
-  // IN から7日たっても UP が空なら UP のセルに色（元の Excel の条件付き書式と同じ）
-  const idx = k => cols.findIndex(c=>c.key===k);
-  const cf = STAGES.map(s=>[idx(`${s.id}|in`), idx(`${s.id}|up`)]).filter(([a,b])=>a>=0 && b>=0);
   const prefix = `${S.code||'SMP'}-${epNum(ep)}-`;
-  return {prog:true, partial:!!only, template:tpl, owned, rows, cf, prefix, freeze:tpl.heads, freezeCols:tpl.freezeCols, protect:false,
+  return {prog:true, partial:!!only, template: only ? progTemplateLite(tpl) : tpl, owned, rows, prefix, freeze:tpl.heads, freezeCols:tpl.freezeCols, protect:false,
     map:{cols:cols.map(c=>c.key), prefix, heads:tpl.heads}};
 }
 // 話数のシートを、スプレッドシートの見た目のとおりの表にする（テスト・画面の画像・ダミーの xlsx で使う）
