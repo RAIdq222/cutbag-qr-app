@@ -181,7 +181,7 @@ async function resetData(){
   p.S = seedState(); S = p.S; p.old = false; store.set(dataKey(pid), rawOf(p.S));
   if(pr.endpoint){
     ui.busy = '初期データを書き込んでいます…'; renderPhone();
-    try{ const j = await api(pr, 'reset', {data:rawOf(p.S), ...(p.oldGas ? {} : {tables:buildTables()})});
+    try{ const j = await api(pr, 'reset', {data:rawOf(p.S), ...(p.oldGas ? {} : {tables:buildTables(), dataOnly:true})});
       p.fullTries = 0; afterWrite(pid, j.rebuilt);   // 日報などは、このあと続けて作る
       markSent(pid); p.sync = {at:Date.now(), err:null, pending:0}; ui.busy = null; flashToast('初期化しました'); }
     catch(err){ ui.busy = null; flashToast(err.message); }
