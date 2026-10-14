@@ -66,11 +66,14 @@ async function doSync(pid){
   try{
     // 書き込み口（Apps Script）が前の版のときは、表の形が合わないので元データだけを送る
     // 話数のシートは、アプリで変えたカットの行だけを書く（人がスプレッドシートで直したセルを上書きしない）
-    const touched = p.fullNext ? null : new Set([...changed.events.map(e=>e.cut), ...changed.cuts.map(c=>c.id), ...changed.qrs.map(q=>q.cut)]);
-    const j = await api(pr, 'upsert', {...changed, ...(p.oldGas ? {} : {tables:withS(committed(p.S), ()=>buildTables(touched))})});
+    const sheetCuts = p.sheetCuts || new Set();
+    const touched = p.fullNext ? null : new Set([...changed.events.map(e=>e.cut), ...changed.cuts.map(c=>c.id), ...changed.qrs.map(q=>q.cut), ...sheetCuts]);
+    // 日報などの型は、全部の行を送るとき（シートを作り直すとき）だけ付ける
+    const j = await api(pr, 'upsert', {...changed, ...(p.oldGas ? {} : {tables:withS(committed(p.S), ()=>buildTables(touched)), ...(touched ? {} : {reports:REPORT_TEMPLATES})})});
     p.fullNext = !!(j.rebuilt && j.rebuilt.length);   // 見出しから作り直したシートには、次の送信で全部の行を書く
     if(p.fullNext) setTimeout(()=>doSync(pid), 300);
     Object.keys(KEYS).forEach(k=>changed[k].forEach(x=>p.sent[k].set(x[KEYS[k]], JSON.stringify(x))));
+    sheetCuts.forEach(id=>p.sheetCuts.delete(id));
     p.sync = {at:Date.now(), err:null, pending:0};
     // 登録のポップアップ：その読み取りの分がすべて届いたら「登録しました」にする
     const dp = ui && ui.done;
@@ -133,7 +136,11 @@ async function reload(pid, quiet){
     if(j.name && pr.name!==j.name){ pr.name = j.name; saveCfg(); }
     p.old = isOldData(j.data);
     p.oldGas = !('meta' in j.data);
+    // スプレッドシートで直したカットは、状態（現状の列）が変わるので、その行を書き直す
+    const known = new Set(p.S.events.map(e=>e.no));
+    const fromSheet = (j.data.events||[]).filter(e=>e.via==='sheet' && !known.has(e.no)).map(e=>e.cut);
     p.S = makeState(p.old ? {} : j.data); markSent(pid); store.set(dataKey(pid), rawOf(p.S));
+    if(fromSheet.length && !p.old && !p.oldGas){ p.sheetCuts = new Set([...(p.sheetCuts||[]), ...fromSheet]); doSync(pid); }
     p.sync = {at:Date.now(), err:null, pending:0};
     if(pid===cfg.current) S = p.S;
   }catch(err){ p.sync.err = err.message; if(!quiet) flashToast(err.message); }
@@ -145,7 +152,9 @@ async function resetData(){
   p.S = seedState(); S = p.S; p.old = false; store.set(dataKey(pid), rawOf(p.S));
   if(pr.endpoint){
     ui.busy = '初期データを書き込んでいます…'; renderPhone();
-    try{ await api(pr, 'reset', {data:rawOf(p.S), ...(p.oldGas ? {} : {tables:buildTables()})}); markSent(pid); p.sync = {at:Date.now(), err:null, pending:0}; ui.busy = null; flashToast('初期化しました'); }
+    try{ const j = await api(pr, 'reset', {data:rawOf(p.S), ...(p.oldGas ? {} : {tables:buildTables(), reports:REPORT_TEMPLATES})});
+      if(j.rebuilt && j.rebuilt.length){ p.fullNext = true; setTimeout(()=>doSync(pid), 300); }   // 時間の都合で作れなかったシートは、続けて作る
+      markSent(pid); p.sync = {at:Date.now(), err:null, pending:0}; ui.busy = null; flashToast('初期化しました'); }
     catch(err){ ui.busy = null; flashToast(err.message); }
   } else { markSent(pid); flashToast('初期化しました（端末内）'); }
   renderPhone();

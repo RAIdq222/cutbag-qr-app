@@ -155,6 +155,14 @@ function derive(cutId){
       const x = cell(e.stage); x[e.field] = e.value; x[e.field+'Src'] = '';
       if(e.field==='person' && e.stage===d.sid && d.phase==='in') d.holder = e.value;
       if(e.field==='due' && e.stage===d.sid) d.due = e.value;
+      // 今の工程の IN・UP を入れたら（スプレッドシートで直したときも）、状態も進める。空にしたら戻す。日付は入れた日
+      if(e.stage===d.sid){
+        const fix = !!(d.open || d.ret);
+        if(e.field==='in' && e.value && d.phase==='wait'){ d.phase = 'in'; d.holder = x.person || ''; d.due = x.due || null; d.next = null; d.lastTs = e.value; }
+        else if(e.field==='in' && !e.value && d.phase==='in' && !fix && !x.up){ d.phase = 'wait'; d.holder = SHELF; }
+        else if((e.field==='up' && !fix || e.field==='rup' && fix) && e.value && d.phase==='in'){ d.phase = 'review'; d.from = d.holder; d.holder = '制作（確認中）'; d.since = e.value; d.lastTs = e.value; }
+        else if((e.field==='up' && !fix || e.field==='rup' && fix) && !e.value && d.phase==='review'){ d.phase = 'in'; d.holder = d.from || x.person || ''; }
+      }
       continue;
     }
     if(e.type==='IN'){
@@ -547,9 +555,39 @@ function orderRowStatus(x, linked){
 }
 const FIELD_NAME = {in:'IN', up:'UP', due:'納期', person:'担当', sheets:'枚数', rin:'リテイクIN', rup:'リテイクUP'};
 const TYPE_NAME = {IN:'配布', UP:'回収', OK:'確認OK', RETURN:'差し戻し', RETAKE:'リテイク', VOID:'取り消し', ALERT:'旧ラベル', LINK:'QR登録', SET:'入力', ROUTE:'工程の追加・削除', REQ:'発注書の更新依頼'};
+// 日報・担当週次UP数・作監週次UP数（話数ごと）：元の Excel の式のまま。式は話数のシート（#01 など）を数える。
+// アプリが書くのは名前の欄だけ（話数の担当と、カットの LO・原画の担当から。青い文字）。型（REPORT_TEMPLATES）は、シートを作るときだけ送る
+const REPORT_SHEETS = ['日報','担当週次UP数','作監週次UP数'];
+const reportName = (ep, kind) => `${ep} ${kind}`;
+function reportInputs(ep, kind){
+  const staff = epInfo(ep).staff || {}, ders = S.cuts.filter(c=>c.ep===ep).map(c=>[c, derive(c.id)]);
+  // 日報の LO担当者は、パートと担当の組（元の Excel と同じく、パートの順）
+  const pairs = [];
+  ders.forEach(([c,d])=>{ const p = (d.cells.LO||{}).person; if(p && !pairs.some(x=>x.part===(c.part||'') && x.person===p)) pairs.push({part:c.part||'', person:p}); });
+  pairs.sort((a,b)=>a.part.localeCompare(b.part) || a.person.localeCompare(b.person));
+  const gen = [...new Set(ders.map(([c,d])=>(d.cells.GEN||{}).person).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  // 週次のスタート週：その工程がはじめて IN した週の月曜（まだなければ、話数ではじめて IN した週）
+  const ins = sid => ders.map(([c,d])=>(sid ? [(d.cells[sid]||{}).in] : Object.values(d.cells).map(x=>x.in))).flat().filter(Boolean);
+  const monday = t => { const d = new Date(startOfDay(t)); d.setDate(d.getDate() - (d.getDay()+6)%7); return d.getTime(); };
+  const first = sid => { const a = ins(sid), b = ins(null); return a.length ? Math.min(...a) : b.length ? Math.min(...b) : clock(); };
+  return REPORT_TEMPLATES[kind].inputs.map(([r,c,k,a])=>{
+    const v = k==='title' ? `${titleOf()}${ep}`
+      : k==='staff' ? (staff[a] || '-')
+      : k==='sk' ? ((staff.作監||{})[a] || '')
+      : k==='loPart' ? (pairs[a] ? pairs[a].part : '')
+      : k==='loPerson' ? (pairs[a] ? pairs[a].person : '')
+      : k==='gen' ? (gen[a] || '')
+      : k==='start' ? 'D:' + ymd(monday(first(a))) : '';
+    return [r, c, v, k==='start' ? 1 : 0];   // 4番目が 1：シートを作るときだけ書く（あとは人が直す）
+  });
+}
+function reportTable(ep, kind){
+  return {report:kind, ver:REPORT_VER, inputs:reportInputs(ep, kind),
+    refs:{進捗表:ep, ...Object.fromEntries(REPORT_SHEETS.map(k=>[k, reportName(ep, k)]))}};
+}
 function buildTables(only){
   const out = {};
-  epsOf().forEach(ep=>{ out[ep] = progTable(ep, only); });
+  epsOf().forEach(ep=>{ out[ep] = progTable(ep, only); REPORT_SHEETS.forEach(k=>{ out[reportName(ep, k)] = reportTable(ep, k); }); });
   // 発注管理（発注書から取り込んだもの。発注書は書き換えない）
   {
     const head = ['発注番号','発注日','発注先','作業内容','話数','カットNo.（記載）','紐づけ','枚','単価方式','単価','金額','納品期日','状態'];
