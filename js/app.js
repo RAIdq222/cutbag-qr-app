@@ -68,10 +68,8 @@ async function doSync(pid){
     // 話数のシートは、アプリで変えたカットの行だけを書く（人がスプレッドシートで直したセルを上書きしない）
     const sheetCuts = p.sheetCuts || new Set();
     const touched = p.fullNext ? null : new Set([...changed.events.map(e=>e.cut), ...changed.cuts.map(c=>c.id), ...changed.qrs.map(q=>q.cut), ...sheetCuts]);
-    // 日報などの型は、全部の行を送るとき（シートを作り直すとき）だけ付ける
-    const j = await api(pr, 'upsert', {...changed, ...(p.oldGas ? {} : {tables:withS(committed(p.S), ()=>buildTables(touched)), ...(touched ? {} : {reports:REPORT_TEMPLATES})})});
-    p.fullNext = !!(j.rebuilt && j.rebuilt.length);   // 見出しから作り直したシートには、次の送信で全部の行を書く
-    if(p.fullNext) setTimeout(()=>doSync(pid), 300);
+    const j = await api(pr, 'upsert', {...changed, ...(p.oldGas ? {} : {tables:withS(committed(p.S), ()=>buildTables(touched))})});
+    afterWrite(pid, j.rebuilt);
     Object.keys(KEYS).forEach(k=>changed[k].forEach(x=>p.sent[k].set(x[KEYS[k]], JSON.stringify(x))));
     sheetCuts.forEach(id=>p.sheetCuts.delete(id));
     p.sync = {at:Date.now(), err:null, pending:0};
@@ -85,6 +83,34 @@ async function doSync(pid){
   p.syncing = false;
   if(ui && ['manage','settings'].includes(ui.screen) && !ui.modal) renderPhone();
   if(p.dirty) doSync(pid);
+}
+// 返事の rebuilt：作り直した話数のシート（次の送信で全部の行を書く）と、まだない日報など（別の送信で作る）
+function afterWrite(pid, rebuilt){
+  const p = PJ[pid], list = rebuilt || [], rep = list.filter(n=>REPORT_SHEETS.some(k=>n.endsWith(' '+k)));
+  const prog = list.filter(n=>!rep.includes(n));
+  // 全部の行を送り直すのは続けて2回まで（同じ返事が続いても、送り続けない）
+  p.fullTries = prog.length ? (p.fullTries||0) + 1 : 0;
+  p.fullNext = prog.length > 0 && p.fullTries <= 2;
+  if(p.fullNext) setTimeout(()=>doSync(pid), 300);
+  if(rep.length) buildReports(pid, rep);
+}
+// 日報・週次UP数のシートを作る（時間がかかるので、ふだんの送信とは分けて、作れるだけ作って続ける）
+async function buildReports(pid, names){
+  const p = PJ[pid], pr = projOf(pid);
+  if(p.reporting) return;
+  p.reporting = true;
+  try{
+    let left = names;
+    for(let k=0; k<8 && left.length; k++){
+      const all = withS(committed(p.S), ()=>buildTables(new Set()));
+      const tables = Object.fromEntries(left.filter(n=>all[n]).map(n=>[n, all[n]]));
+      const j = await api(pr, 'reports', {tables, reports:REPORT_TEMPLATES});
+      const next = j.rebuilt || [];
+      if(next.length >= left.length) break;   // 1枚も作れなかったら止める（次の送信でまた頼む）
+      left = next;
+    }
+  }catch(err){}
+  p.reporting = false;
 }
 // 「完了（登録する）」のあとのポップアップ。書き込み先がない（端末内のデモ）ときは、すぐ「登録しました」
 function donePop(n, nos){
@@ -152,8 +178,8 @@ async function resetData(){
   p.S = seedState(); S = p.S; p.old = false; store.set(dataKey(pid), rawOf(p.S));
   if(pr.endpoint){
     ui.busy = '初期データを書き込んでいます…'; renderPhone();
-    try{ const j = await api(pr, 'reset', {data:rawOf(p.S), ...(p.oldGas ? {} : {tables:buildTables(), reports:REPORT_TEMPLATES})});
-      if(j.rebuilt && j.rebuilt.length){ p.fullNext = true; setTimeout(()=>doSync(pid), 300); }   // 時間の都合で作れなかったシートは、続けて作る
+    try{ const j = await api(pr, 'reset', {data:rawOf(p.S), ...(p.oldGas ? {} : {tables:buildTables()})});
+      p.fullTries = 0; afterWrite(pid, j.rebuilt);   // 日報などは、このあと続けて作る
       markSent(pid); p.sync = {at:Date.now(), err:null, pending:0}; ui.busy = null; flashToast('初期化しました'); }
     catch(err){ ui.busy = null; flashToast(err.message); }
   } else { markSent(pid); flashToast('初期化しました（端末内）'); }
