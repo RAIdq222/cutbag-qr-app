@@ -69,7 +69,13 @@ async function doSync(pid){
     const sheetCuts = p.sheetCuts || new Set();
     const touched = p.fullNext ? null : new Set([...changed.events.map(e=>e.cut), ...changed.cuts.map(c=>c.id), ...changed.qrs.map(q=>q.cut), ...sheetCuts]);
     // ふだんの送信は、話数のシートの行（データ）だけ。表を作り直すのは初期化のときと、全部の行を送り直すときだけ
-    const j = await api(pr, 'upsert', {...changed, ...(p.oldGas ? {} : {tables:withS(committed(p.S), ()=>buildTables(touched)), dataOnly: !!touched})});
+    const tables = p.oldGas ? null : withS(committed(p.S), ()=>buildTables(touched));
+    const body = !tables ? {} : touched && (p.gasV||0) >= 3 ? {tables:slimTables(pid, tables), dataOnly:true} : {tables, dataOnly: !!touched};
+    const j = await api(pr, 'upsert', {...changed, ...body});
+    gotReply(pid, j);
+    if(tables) rememberCells(pid, body.tables || tables);
+    if(p.tblSentNext){ Object.assign(p.tblSent, p.tblSentNext); p.tblSentNext = null; }
+    if(tables && !body.dataOnly) p.tblSent = Object.fromEntries(Object.entries(tables).filter(([n,t])=>!t.prog).map(([n,t])=>[n, JSON.stringify(t)]));
     afterWrite(pid, j.rebuilt);
     Object.keys(KEYS).forEach(k=>changed[k].forEach(x=>p.sent[k].set(x[KEYS[k]], JSON.stringify(x))));
     sheetCuts.forEach(id=>p.sheetCuts.delete(id));
@@ -84,6 +90,34 @@ async function doSync(pid){
   p.syncing = false;
   if(ui && ['manage','settings'].includes(ui.screen) && !ui.modal) renderPhone();
   if(p.dirty) doSync(pid);
+}
+// 返事から：書き込み口の版・かかった時間・確認が要ること
+function gotReply(pid, j){
+  const p = PJ[pid];
+  if(j.v) p.gasV = j.v;
+  if(j.times){ p.times = [{at:Date.now(), action:j.action, ...j.times}, ...(p.times||[])].slice(0, 5); }
+  if(j.warnings) p.warnings = j.warnings;
+}
+// 話数のシートで、前に送ったセル（カットごと）。変わったセルだけを送る（人がスプレッドシートで直したセルを、同じ値で上書きしない）
+const cellsKey = pid => 'cutbagqr.cells.' + pid;
+function sentCells(pid){ const p = PJ[pid]; if(!p.cells) p.cells = store.get(cellsKey(pid)) || {}; return p.cells; }
+function rememberCells(pid, tables){
+  const m = sentCells(pid);
+  Object.values(tables).forEach(t=>{ if(!t.prog) return; t.rows.forEach(r=>{ const x = m[r.id] || (m[r.id] = {}); r.cells.forEach(c=>{ x[c[0]] = JSON.stringify(c.slice(1)); }); }); });
+  store.set(cellsKey(pid), m);
+}
+// ふだんの送信の中身：話数のシートだけ。行は変わったセルだけ、型は見出しと列の意味だけ（新しい書き込み口のとき）
+function slimTables(pid, tables){
+  const p = PJ[pid], m = sentCells(pid), out = {};
+  p.tblSent = p.tblSent || {};
+  Object.entries(tables).forEach(([name, t])=>{
+    // ほかの表（履歴ログ・QR管理など）は、前に送ったものと中身が違うときだけ
+    if(!t.prog){ if(t.report) return; const h = JSON.stringify(t); if(p.tblSent[name]!==h){ out[name] = t; p.tblSentNext = {...(p.tblSentNext||{}), [name]:h}; } return; }
+    const rows = t.rows.map(r=>{ const x = m[r.id]; return x ? {...r, cells:r.cells.filter(c=>x[c[0]]!==JSON.stringify(c.slice(1)))} : r; }).filter(r=>r.cells.length);
+    if(!rows.length) return;
+    out[name] = {...t, rows, template:{heads:t.template.heads, cols:t.template.cols.map(c=>({c:c.c, h:c.h, key:c.key, fmt:c.fmt}))}};
+  });
+  return out;
 }
 // 返事の rebuilt：作り直した話数のシート（次の送信で全部の行を書く）と、まだない日報など（別の送信で作る）
 function afterWrite(pid, rebuilt){
@@ -129,6 +163,18 @@ function syncLine(){
   if(p.sync.pending) return `<p class="sync-line">スプレッドシートに送っています（${p.sync.pending}件）</p>`;
   return p.sync.at ? `<p class="sync-line ok">スプレッドシートに反映済み ${fDT(p.sync.at)}</p>` : '';
 }
+// スプレッドシートで確認が要ること（人が列を足した・読めない入力など）。押すと一覧
+function warnLine(){
+  const p = PJ[cfg.current], n = p && p.warnings ? p.warnings.length : 0;
+  return n ? `<button type="button" class="sync-line bad warn-line" data-a="warnShow">スプレッドシートに要確認 ${n}件</button>` : '';
+}
+function warnView(){
+  const list = (PJ[cfg.current].warnings || []);
+  return `<div class="sheetm" role="dialog" aria-label="スプレッドシートの要確認"><h4>スプレッドシートの要確認</h4>
+    <ul class="notice">${list.map(w=>`<li class="nt-warn"><b>${esc(w.sheet)}</b><span>${esc(w.msg)}</span></li>`).join('')}</ul>
+    <p class="mnote">スプレッドシートを直すと、次の送信で消えます。</p>
+    <button class="closebtn" data-a="closeModal">閉じる</button></div>`;
+}
 function oldDataLine(){
   const p = PJ[cfg.current]; if(!p) return '';
   if(p.oldGas) return `<p class="sync-line bad">スプレッドシートの書き込み口（Apps Script）が前の版です。gas/Code.gs を貼り替えて、デプロイし直してください</p>`;
@@ -165,6 +211,7 @@ async function reload(pid, quiet){
     if(j.name && pr.name!==j.name){ pr.name = j.name; saveCfg(); }
     p.old = isOldData(j.data);
     p.oldGas = !('meta' in j.data);
+    gotReply(pid, j);
     // スプレッドシートで直したカットは、状態（現状の列）が変わるので、その行を書き直す
     const known = new Set(p.S.events.map(e=>e.no));
     const fromSheet = (j.data.events||[]).filter(e=>e.via==='sheet' && !known.has(e.no)).map(e=>e.cut);
@@ -182,7 +229,7 @@ async function resetData(){
   if(pr.endpoint){
     ui.busy = '初期データを書き込んでいます…'; renderPhone();
     try{ const j = await api(pr, 'reset', {data:rawOf(p.S), ...(p.oldGas ? {} : {tables:buildTables(), dataOnly:true})});
-      p.fullTries = 0; afterWrite(pid, j.rebuilt);   // 日報などは、このあと続けて作る
+      p.fullTries = 0; gotReply(pid, j); p.cells = {}; rememberCells(pid, buildTables()); afterWrite(pid, j.rebuilt);
       markSent(pid); p.sync = {at:Date.now(), err:null, pending:0}; ui.busy = null; flashToast('初期化しました'); }
     catch(err){ ui.busy = null; flashToast(err.message); }
   } else { markSent(pid); flashToast('初期化しました（端末内）'); }
@@ -231,6 +278,7 @@ function settingsView(){
     </section>
     <section class="home-sec"><h5>デバッグ（${esc(titleOf() || pr.name)}）</h5>
       <p class="mnote">カット ${s.cuts.length}件・QR ${s.qrs.filter(q=>q.status==='active').length}件・履歴 ${s.events.length}件</p>
+      ${(PJ[cfg.current].times||[]).length ? `<p class="mnote">スプレッドシートでかかった時間（秒）：${PJ[cfg.current].times.map(t=>`${fDT(t.at)} 待ち ${(t.lock/1000).toFixed(1)}・元データ ${((t.raw||0)/1000).toFixed(1)}・表 ${((t.sheets||0)/1000).toFixed(1)}`).join('／')}</p>` : ''}
       ${ui.confirmReset
         ? `<div class="confirm"><span>${esc(pr.name)} のスプレッドシートを、デモの初期データに作り直します。読み取った内容は消えます。</span><div class="row"><button class="btn" data-a="resetNo">やめる</button><button class="btn primary" data-a="resetYes">初期化する</button></div></div>`
         : `<button type="button" class="act ghost" data-a="resetAsk">スプレッドシートを初期化する</button>`}
@@ -306,6 +354,7 @@ function linkQr(r){
 function appAction(a, t){
   if(a==='opSave'){ cfg.operator = $('#cfgOp').value.trim() || OPERATOR; cfg.org = $('#cfgOrg').value.trim(); OPERATOR = cfg.operator; saveCfg(); flashToast('保存しました'); return true; }
   if(a==='pjPick'){ ui.modal = 'pj'; renderPhone(); return true; }
+  if(a==='warnShow'){ ui.modal = 'warn'; renderPhone(); return true; }
   if(a==='print'){ location.href = 'print.html'; return true; }
   if(a==='resetAsk'){ ui.confirmReset = true; renderPhone(); return true; }
   if(a==='resetNo'){ ui.confirmReset = false; renderPhone(); return true; }

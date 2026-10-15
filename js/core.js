@@ -536,7 +536,8 @@ function progTable(ep, only){
   const rows = cuts.map(c=>{ const d = derive(c.id);
     return {no:sheetNo(c.no), id:c.id, create:create.map(i=>[i, progCell(cols[i].key, c, d).v]), cells:owned.map(i=>{ const x = progCell(cols[i].key, c, d); return [i, x.v ?? '', x.f||'', x.b||'']; })}; });
   const prefix = `${S.code||'SMP'}-${epNum(ep)}-`;
-  return {prog:true, partial:!!only, template: only ? progTemplateLite(tpl) : tpl, owned, rows, prefix, freeze:tpl.heads, freezeCols:tpl.freezeCols, protect:false,
+  const nos = S.cuts.filter(c=>c.ep===ep).map(c=>sheetNo(c.no));
+  return {prog:true, partial:!!only, template: only ? progTemplateLite(tpl) : tpl, owned, rows, prefix, nos, freeze:tpl.heads, freezeCols:tpl.freezeCols, protect:false,
     map:{cols:cols.map(c=>c.key), prefix, heads:tpl.heads}};
 }
 // 話数のシートを、スプレッドシートの見た目のとおりの表にする（テスト・画面の画像・ダミーの xlsx で使う）

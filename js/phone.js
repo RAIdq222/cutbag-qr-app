@@ -55,7 +55,7 @@ function homeView(){
   const tile = (a, icon, label, badge) => `<button type="button" class="tile${a==='scan'?' main':''}" data-a="${a}">${svg(icon, 60)}<b>${label}</b>${badge ? `<em class="badge">${badge}</em>` : ''}</button>`;
   return `<div class="appbar"><h3>カット袋QR</h3>${who()}<button type="button" class="gear" data-a="go" data-to="settings" aria-label="マイページ">${svg('me', 24)}</button></div>
   <div class="body home">
-    ${oldDataLine()}
+    ${oldDataLine()}${warnLine()}
     <div class="tiles">
       ${tile('scan','qr','QRコード読取')}
       ${tile('goReview','review','回収済カットの確認', n ? n+'件' : '')}
@@ -150,7 +150,7 @@ function manageView(){
   const found = all.filter(x=>(!q || String(Number(x.c.no.slice(1))).startsWith(String(Number(q)))) && filterMatch(x.d, f));
   return `<div class="appbar">${back('home')}<h3>進捗表の確認・修正</h3></div>
   <div class="body">
-    <div class="mg-top">${pjLine()}${syncLine()}${oldDataLine()}</div>
+    <div class="mg-top">${pjLine()}${syncLine()}${oldDataLine()}${warnLine()}</div>
     <div class="ep-tabs">${eps.map(e=>`<button type="button" class="ep-tab${e===ep?' on':''}" data-ep="${esc(e)}">${esc(e)}</button>`).join('')}</div>
     <p class="ep-owner">話数担当：<b>${esc(epOwner(ep) || '未入力')}</b></p>
     <input id="findCut" type="search" inputmode="numeric" placeholder="番号で検索（例：13）" value="${esc(ui.q||'')}" aria-label="番号で検索">
@@ -305,6 +305,7 @@ function pickPerson(name){
 }
 function modalView(){
   if(ui.modal==='pj') return pjView();
+  if(ui.modal==='warn') return warnView();
   if(ui.modal==='cal') return calView();
   if(ui.modal==='person') return personView();
   if(ui.modal==='regConfirm') return regConfirmView();
