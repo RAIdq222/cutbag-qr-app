@@ -239,7 +239,7 @@ function evText(e){
   if(e.type==='OK') return `${s} 確認OK${e.next && e.next.person ? `（次：${e.next.person}）` : ''}`;
   if(e.type==='RETURN') return `${e.rt.id} 差し戻し（${e.rt.reason}）`;
   if(e.type==='RETAKE') return `${e.rt.id} リテイク ${nameOf(e.rt.raised)} → ${s}（${e.rt.reason}）`;
-  if(e.type==='VOID') return `取り消し（No.${e.voidOf}）`;
+  if(e.type==='VOID') return `取り消し（No.${evPos(e.voidOf)}）`;
   if(e.type==='ALERT') return `旧ラベルの読み取り`;
   if(e.type==='LINK') return e.note || 'カット袋を登録';
   if(e.type==='SET'){ const v = ['in','up','due','rin','rup'].includes(e.field) ? (fD(e.value) || '空') : (e.value ?? '空'); return `${s}の${FIELD_NAME[e.field]||e.field}を ${v} にした`; }

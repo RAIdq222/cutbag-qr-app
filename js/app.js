@@ -345,7 +345,7 @@ function linkQr(r){
     const old = S.qrs.find(q=>q.cut===c.id && q.status==='active');
     if(old){ old.status = 'revoked'; old.revoked = ts; old.reason = '付け替え'; }
     S.qrs.push({token:r.token, cut:c.id, status:'active', issued:ts, ...(old ? {prev:old.token} : {})});
-    S.events.push({no:++S.seq, ts, ets:ts, cut:c.id, qr:r.token, type:'LINK', stage:'', op:OPERATOR, note: old ? `QRを付け替え（旧 ${old.token}）` : 'カット袋を登録'});
+    S.events.push({no:newNo(), ts, ets:ts, cut:c.id, qr:r.token, type:'LINK', stage:'', op:OPERATOR, note: old ? `QRを付け替え（旧 ${old.token}）` : 'カット袋を登録'});
     return {c, old};
   });
 }

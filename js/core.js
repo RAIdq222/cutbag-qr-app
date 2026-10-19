@@ -266,6 +266,10 @@ function autoIn(cutId, d){
 }
 
 // 変更はすべてここを通る。今の状態で許される操作かを確かめてから追記する
+// 履歴の番号：端末ごとに重ならない番号（時刻×1000＋乱数）。2台で同時に読み取っても、ほかの端末の履歴を上書きしない
+function newNo(){ const n = Math.max(S.seq + 1, Date.now()*1000 + Math.floor(Math.random()*1000)); S.seq = n; return n; }
+// 画面・履歴ログに出す番号（古い順に 1, 2, 3…）
+function evPos(no){ const i = S.events.findIndex(e=>e.no===no); return i >= 0 ? i + 1 : ''; }
 function act(cutId, type, o={}, ts=clock()){
   const d = derive(cutId), st = ST[d.sid];
   const fail = m => ({ok:false, msg:m});
@@ -275,7 +279,7 @@ function act(cutId, type, o={}, ts=clock()){
   if(type==='RETURN' && d.phase!=='review') return fail('差し戻しは、確認待ちのカット袋から行えます。');
   if(type==='RETAKE' && !(d.phase==='review' && st.kind==='check')) return fail('リテイクは、チェック工程から回収したカット袋で登録します。');
   const q = activeQr(cutId);
-  const ev = {no:++S.seq, ts, ets:o.ets||ts, cut:cutId, qr:o.qr || (q ? q.token : ''), type, op:OPERATOR, note:o.note||''};
+  const ev = {no:newNo(), ts, ets:o.ets||ts, cut:cutId, qr:o.qr || (q ? q.token : ''), type, op:OPERATOR, note:o.note||''};
   if(o.late) ev.late = true;
   if(type==='IN'){
     ev.stage = d.sid; ev.person = o.person; ev.src = o.src || '';
@@ -610,11 +614,11 @@ function buildTables(only){
   {
     const head = ['No','実施日時','入力日時','話数','C＃','操作','工程','担当','納期','発注番号','リテイク','理由','指摘した工程','指摘した人','備考','入力者','経路'];
     const voided = voidedSet();
-    const rows = S.events.map(e=>{ const c = cutById(e.cut) || {};
+    const rows = S.events.map((e, pos)=>{ const c = cutById(e.cut) || {};
       const rt = e.rt || null;
       const stg = e.type==='SET' ? `${nameOf(e.stage)}（${FIELD_NAME[e.field]||e.field}）` : nameOf(e.stage);
-      const note = e.type==='VOID' ? `No.${e.voidOf} を取り消し` : e.type==='SET' ? `${['due','in','up','rin','rup'].includes(e.field) ? (fD(e.value)||'空') : (e.value ?? '空')} にした` : e.type==='ROUTE' ? `工程：${e.route.map(nameOf).join('→')}` : e.note;
-      return {strike:voided.has(e.no), cells:[{v:e.no},{v:fDT(e.ts)},{v:e.late?fDT(e.ets):''},{v:c.ep||''},{v:c.no||''},{v:TYPE_NAME[e.type]||e.type, b: rt ? BG.retake : e.type==='ALERT' ? BG.over : ''},
+      const note = e.type==='VOID' ? `No.${evPos(e.voidOf)} を取り消し` : e.type==='SET' ? `${['due','in','up','rin','rup'].includes(e.field) ? (fD(e.value)||'空') : (e.value ?? '空')} にした` : e.type==='ROUTE' ? `工程：${e.route.map(nameOf).join('→')}` : e.note;
+      return {strike:voided.has(e.no), cells:[{v:pos+1},{v:fDT(e.ts)},{v:e.late?fDT(e.ets):''},{v:c.ep||''},{v:c.no||''},{v:TYPE_NAME[e.type]||e.type, b: rt ? BG.retake : e.type==='ALERT' ? BG.over : ''},
         {v:stg},{v:['IN','RETAKE','RETURN'].includes(e.type)?e.person:'', f: e.type==='IN' ? fontOf(e.src) : ''},{v:fD(e.due), f: e.type==='IN' ? fontOf(e.dueSrc) : ''},{v:e.po?(e.po+(e.provisional?'（仮）':'')):''},
         {v:rt?rt.id:''},{v:rt?rt.reason:''},{v:rt ? nameOf(rt.raised||rt.stage) : ''},{v:rt ? (rt.by||'') : ''},{v:note||''},{v:e.op},{v:e.via==='sheet'?'スプレッドシート':'アプリ'}]}; });
     out['履歴ログ'] = table(head, rows);
