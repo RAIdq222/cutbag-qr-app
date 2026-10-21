@@ -399,69 +399,95 @@ function seed(){
   const tok = () => FIXED_QR[tokN++];
   const now = Date.now();
   const R = (...add) => DEFAULT_ROUTE.concat(add).sort((a,b)=>ORDER[a]-ORDER[b]);
+  // 初期化した日を「今日」にして、営業日（土日・祝日を除く）の10時〜19時に並べる。今より先の時刻にはしない
+  const off = d => d.getDay()===0 || d.getDay()===6 || HOLIDAYS.has(ymd(d.getTime()));
+  const day0 = (()=>{ const d = new Date(now); d.setHours(0,0,0,0); while(off(d)) d.setDate(d.getDate()-1); return d; })();
+  const bdAgo = n => { const d = new Date(day0); let k = 0; while(k < n){ d.setDate(d.getDate()-1); if(!off(d)) k++; } return d; };
+  const bdAdd = (d0, n) => { const d = new Date(d0); d.setHours(0,0,0,0); let k = 0; while(k < n){ d.setDate(d.getDate()+1); if(!off(d)) k++; } return d; };
+  const at = (d, h) => { const t = new Date(d); t.setHours(Math.floor(h), Math.round((h%1)*60/5)*5, 0, 0); return t.getTime(); };
+  const due18 = (d0, n) => at(bdAdd(d0, n), 18);
+  // 工程にかかる日数（営業日）。作業は発注どおり、チェックは1〜2日
+  const DUR = {LO:5, LOENJ:1, LOEN:1, LOFUKU:1, LOKAN:1, LOSK:2, LOSOSK:1, LOCHARA:1, GEN:6, GENEN:1, GENSK:2, GENSOSK:1, MAKI:1, DOU:4, DOKEN:1, SHIAGE:3, CELKEN:1, HONSATSU:2};
   const defs = [
-    // 話数, no, パート, 秒, 通す工程, 到達工程, 状態（in=作業中・チェック中／review=回収済み・確認待ち／wait=配布待ち）, 開始（何日前）, 最終（何日前）
-    ['#01','C001','A','3+12', R(),         'LO',    'wait',   0, 0],   // デモの1枚目：LO の配布から順に進めて見せる
-    ['#01','C002','A','5+00', R(),         'HONSATSU','in',  28, 1],
-    ['#01','C003','A','2+18', R(),         'GENEN', 'wait',  20, 1.2],
-    ['#01','C004','A','6+06', R(),         'GEN',   'in',    24, 0.6],
-    ['#01','C005','B','4+00', R(),         'DOU',   'in',    22, 1],
-    ['#01','C006','B','3+06', R('GENSOSK'),'GENSK', 'in',    21, 0.7],
-    ['#01','C007','B','7+12', R(),         'GENSK', 'in',    18, 0.5],
-    ['#01','C008','B','1+18', R('LOKAN','GENSOSK'),'DONE','', 30, 2],
-    ['#01','C009','C','3+00', R(),         'LO',    'wait',   0, 0],
-    ['#01','C010','C','2+12', R(),         'SHIAGE','wait',  25, 1.5],
-    ['#01','C011','C','4+18', R(),         'DOKEN', 'review',23, 0.8],
-    ['#01','C012','C','2+00', R(),         'LO',    'wait',   0, 0],
-    ['#01','C013','A','1+12', R(),         'LO',    'wait',   0, 0],
-    ['#01','C014','B','2+06', R(),         'LO',    'wait',   0, 0],
-    ['#01','C015','C','3+18', R(),         'LO',    'wait',   0, 0],
-    ['#02','C001','A','2+00', R(),         'LO',    'in',    10, 9],
-    ['#02','C002','A','3+12', R(),         'LO',    'in',     6, 4],
-    ['#02','C003','B','4+06', R(),         'LOEN',  'review', 9, 1],
-    ['#02','C004','B','1+18', R(),         'LO',    'wait',   0, 0],
-    ['#02','C005','C','2+12', R(),         'LO',    'wait',   0, 0],
-    ['#02','C006','C','5+00', R(),         'LO',    'wait',   0, 0],
+    // 話数, no, パート, 秒, 通す工程, 到達工程, 状態（in=作業中・チェック中／review=回収済み・確認待ち／wait=配布待ち）, 今の状態になったのは何営業日前か, そのほか
+    // C001〜C004：ふつうの流れ（LO・原画）。デモはここから
+    ['#01','C001','A','3+12', R(),         'LO',      'wait',   0],   // LO の配布待ち（1枚目）
+    ['#01','C002','A','5+00', R(),         'LO',      'in',     2],   // LO の作業中
+    ['#01','C003','A','2+18', R(),         'LOEN',    'wait',   0],   // LO を今日回収して確認OK。LO演出に渡す前
+    ['#01','C004','A','6+06', R(),         'GEN',     'in',     4],   // 原画の作業中（4日たっている）
+    // C005 から：いろいろな場面の例
+    ['#01','C005','B','4+00', R(),         'DOU',     'in',     2],   // 動画の作業中。ラベルを再発行した（旧ラベルの例）
+    ['#01','C006','B','3+06', R('GENSOSK'),'GENSK',   'in',     1],   // 原画作監のチェック中。このあと総作監も通す
+    ['#01','C007','B','7+12', R(),         'GENSK',   'retake', 0, {open:['GEN','作画修正','ラスト3枚の芝居が硬い']}],   // 原画作監から原画へのリテイク中
+    ['#01','C008','B','1+18', R('LOKAN','GENSOSK'),'DONE','',   2],   // 完了したカット
+    ['#01','C009','C','3+00', R(),         'LO',      'wait',   0],
+    ['#01','C010','C','2+12', R(),         'SHIAGE',  'wait',   1],   // 動検まで終わり、仕上げに渡す前
+    ['#01','C011','C','4+18', R(),         'DOKEN',   'review', 0],   // 動検から今日回収した（回収済カットの確認の例）
+    ['#01','C012','C','2+00', R(),         'LO',      'wait',   0],   // 発注書で「21」と書き間違えられている
+    ['#01','C013','A','1+12', R(),         'LO',      'wait',   0],
+    ['#01','C014','B','2+06', R(),         'LO',      'wait',   0],
+    ['#01','C015','C','3+18', R(),         'LO',      'wait',   0],
+    ['#02','C001','A','2+00', R(),         'LO',      'in',     7],   // LO の納期を過ぎている
+    ['#02','C002','A','3+12', R(),         'LO',      'in',     2],
+    ['#02','C003','B','4+06', R(),         'LOEN',    'review', 0],   // LO演出から今日回収した
+    ['#02','C004','B','1+18', R(),         'LO',      'wait',   0],
+    ['#02','C005','C','2+12', R(),         'LO',      'wait',   0],
+    ['#02','C006','C','5+00', R(),         'LO',      'wait',   0],
   ];
   const partWorker = {A:0,B:1,C:2};
   const workerFor = (sid, part) => { const w = WORKERS[sid]; return w ? w[Math.min(partWorker[part], w.length-1)] : ''; };
-  defs.forEach(([ep,no,part,sec,route,tgt,phase,a,b])=>{
+  // 1カット分の流れを、始まりの日から順に組み立てる（ops：[種類, 中身, 時刻]）。長さ（営業日）も返す
+  const plan = (c, route, tgt, phase, opt, start) => {
+    const ops = [], ti = tgt==='DONE' ? route.length : route.indexOf(tgt);
+    const inOf = (sid, d) => ST[sid].who==='worker' ? {person:workerFor(sid, c.part), src:SRC_AUTO, work:true, due:due18(d, DUR[sid]||1), dueSrc:SRC_AUTO} : {person:staffFor(c, sid), src:SRC_CALC, due:due18(d, DUR[sid]||1), dueSrc:''};
+    let d = start, h = 10.5 + (Number(c.no.slice(1))*7 % 5) * 0.5;   // 配布の時刻はカットごとに少しずらす
+    const step = sid => {   // IN → UP → OK（UP は工程の日数のあと、OK は同じ日のうちに）
+      ops.push(['IN', inOf(sid, d), at(d, h)]);
+      const n = DUR[sid]||1; d = bdAdd(d, ST[sid].kind==='work' ? Math.max(1, n - (Number(c.no.slice(1)) % 2)) : n);
+      h = 13 + (Number(c.no.slice(1))*3 % 4) * 0.75;
+      ops.push(['UP', {}, at(d, h)]);
+    };
+    const ok = () => { h += 1.25; ops.push(['OK', {}, at(d, h)]); if(h > 17.5){ d = bdAdd(d, 1); h = 10.5; } else h += 0.5; };
+    for(let k=0; k<ti; k++){
+      const sid = route[k];
+      step(sid);
+      if(opt.retake && opt.retake[0]===sid){   // 閉じたリテイク：指摘した工程から戻し、直って確認OK、指摘した工程をもう一度
+        const [, to, reason, note] = opt.retake;
+        h += 1; ops.push(['RETAKE', {target:to, reason, note, due:due18(d, 2)}, at(d, h)]);
+        d = bdAdd(d, 2); h = 15; ops.push(['UP', {}, at(d, h)]); ok();
+        ops.push(['IN', inOf(sid, d), at(d, h)]); d = bdAdd(d, 1); h = 14; ops.push(['UP', {}, at(d, h)]);
+      }
+      ok();
+    }
+    if(phase==='in' || phase==='review' || phase==='retake'){
+      if(ti < route.length){ ops.push(['IN', inOf(route[ti], d), at(d, h)]); }
+      if(phase==='review' || phase==='retake'){ d = bdAdd(d, DUR[route[ti]]||1); h = 11 + (Number(c.no.slice(1)) % 3) * 0.5; ops.push(['UP', {}, at(d, h)]); }
+      if(phase==='retake'){ const [to, reason, note] = opt.open; h += 1.5; ops.push(['RETAKE', {target:to, reason, note, due:due18(d, 2)}, at(d, h)]); }
+    }
+    return ops;
+  };
+  const spanOf = ops => { let n = 0; if(!ops.length) return 0; const a = new Date(ops[0][2]), b = new Date(ops[ops.length-1][2]); a.setHours(0,0,0,0); b.setHours(0,0,0,0); for(let x = new Date(a); x < b; x.setDate(x.getDate()+1)) if(!off(x)) n++; return n; };
+  defs.forEach(([ep,no,part,sec,route,tgt,phase,cur,opt={}])=>{
     const id = cutIdOf(ep, no);
     const c = {id, no, ep, part, sec, route, sk:{LO:part==='B'?'B':'A', 原画:part==='B'?'B':'A'}};
     S.cuts.push(c);
-    if(ep==='#01') S.qrs.push({token:tok(), cut:id, status:'active', issued: now-(a+3)*DAY});
-    const ti = tgt==='DONE' ? route.length : route.indexOf(tgt);
-    const ops = [];
-    const inOf = sid => ST[sid].who==='worker' ? {person:workerFor(sid, part), src:SRC_AUTO, work:true} : {person:staffFor(c, sid), src:SRC_CALC};
-    for(let k=0; k<ti; k++){ const sid = route[k]; ops.push(['IN', inOf(sid)], ['UP',{}], ['OK',{}]); }
-    if(ti<route.length && (phase==='in' || phase==='review')){ ops.push(['IN', inOf(route[ti])]); if(phase==='review') ops.push(['UP',{}]); }
-    ops.forEach(([type,o],k)=>{
-      const ts = now - (a - (a-b)*(ops.length<=1?1:k/(ops.length-1)))*DAY - 3600e3*((k*7)%5);
-      act(id, type, {...o, due: type==='IN' ? ts+5*DAY : null, dueSrc: o.work ? SRC_AUTO : ''}, ts);
+    // 今の状態になった日が cur 営業日前になるように、始まりの日を決める
+    const len = spanOf(plan(c, route, tgt, phase, opt, bdAgo(60)));
+    const start = bdAgo(cur + len);
+    const ops = plan(c, route, tgt, phase, opt, start);
+    if(ep==='#01') S.qrs.push({token:tok(), cut:id, status:'active', issued: at(bdAgo(cur + len + 1), 16)});   // カット袋を作った日
+    let last = 0;
+    ops.forEach(([type, o, ts])=>{
+      ts = Math.min(Math.max(ts, last + 10*60e3), now - 10*60e3); last = ts;   // 同じカットの中で順に、今より前に
+      act(id, type, o, ts);
     });
   });
   const byNo = (no, ep='#01') => cutByNo(no, ep).id;
-  const rebuild = (cutId, script) => { S.events = S.events.filter(e=>e.cut!==cutId); for(const [type,o,daysAgo] of script) act(cutId, type, o, now-daysAgo*DAY); };
-  const W = (person, daysAgo) => ({person, src:SRC_AUTO, due:now-daysAgo*DAY, dueSrc:SRC_AUTO});
-  const C = (sid, cutNo) => ({person:staffFor(cutById(byNo(cutNo)), sid), src:SRC_CALC, due:null});
-  // C004：過去に閉じたリテイクがある（LO作監 → LO）
-  const c4 = byNo('C004');
-  rebuild(c4, [
-    ['IN',W('青木 瞳',19),24],['UP',{},20],['OK',{},19.8],['IN',C('LOEN','C004'),19.5],['UP',{},18.2],['OK',{},18],['IN',C('LOSK','C004'),17.5],['UP',{},17.2],
-    ['RETAKE',{target:'LO', reason:'設定・キャラ表違い', note:'衣装の柄が設定と違う', due:now-15*DAY},17],
-    ['UP',{},14],['OK',{},13.8],['IN',C('LOSK','C004'),13.5],['UP',{},13.2],['OK',{},13],['IN',W('青木 瞳',-1),6],
-  ]);
-  // C007：リテイク対応中（原画作監 → 原画）
-  const c7 = byNo('C007');
-  rebuild(c7, [
-    ['IN',W('森田 健吾',13),18],['UP',{},15],['OK',{},14.8],['IN',C('LOEN','C007'),14.5],['UP',{},14.2],['OK',{},14],['IN',C('LOSK','C007'),13.5],['UP',{},13.2],['OK',{},13],
-    ['IN',W('森田 健吾',6),12],['UP',{},5],['OK',{},4.8],['IN',C('GENEN','C007'),4.5],['UP',{},4.2],['OK',{},4],['IN',C('GENSK','C007'),3.2],['UP',{},0.8],
-    ['RETAKE',{target:'GEN', reason:'作画修正', note:'ラスト3枚の芝居が硬い', due:now+2*DAY},0.5],
-  ]);
   // C005：ラベル破損で再発行済み。旧QRは使えない
   const c5 = byNo('C005'), q5 = activeQr(c5);
-  q5.status = 'revoked'; q5.revoked = now-8*DAY; q5.reason = 'ラベル破損のため再発行';
-  S.qrs.push({token:tok(), cut:c5, status:'active', issued:now-8*DAY, prev:q5.token});
+  q5.status = 'revoked'; q5.reason = 'ラベル破損のため再発行';
+  q5.revoked = at(bdAgo(8), 16.5);
+  S.qrs.push({token:tok(), cut:c5, status:'active', issued:q5.revoked, prev:q5.token});
   S.events.sort((x,y)=>x.ts-y.ts); S.events.forEach((e,i)=>e.no=i+1); S.seq = S.events.length;
   let r = 0; S.events.forEach(e=>{ if(e.type==='RETAKE'){ e.rt.id = 'R'+String(++r).padStart(3,'0'); } }); S.rtSeq = r;
 
@@ -472,22 +498,23 @@ function seed(){
   S.events.forEach(e=>{ if(e.type!=='IN' || !ST[e.stage].po) return; const c = cutById(e.cut); const k = e.stage+'|'+e.person+'|'+c.ep; if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(e); });
   groups.forEach(evs=>{
     const e0 = evs[0], c0 = cutById(e0.cut);
-    const o = newOrder(e0.stage, e0.person, c0.ep, Math.min(...evs.map(e=>e.ts))-DAY, Math.max(...evs.map(e=>e.due||e.ts)), []);
+    const first = new Date(Math.min(...evs.map(e=>e.ts))); first.setHours(0,0,0,0); do { first.setDate(first.getDate()-1); } while(off(first));
+    const o = newOrder(e0.stage, e0.person, c0.ep, at(first, 11), Math.max(...evs.map(e=>e.due||e.ts)), []);
     evs.forEach(e=>{ const c = cutById(e.cut), t = String(Number(c.no.slice(1))); let li = o.lines.findIndex(l=>l.text===t);
       if(li<0){ o.lines.push({text:t, sheets:sheetsOf(c.no, e.stage)}); li = o.lines.length-1; }
       e.po = o.no; e.poLine = li; if(o.lines[li].sheets!=null){ e.sheets = o.lines[li].sheets; e.sheetsSrc = SRC_AUTO; } });
   });
   // これから配布するカットの発注書（発注は作業より先に出ている）
-  newOrder('LO', '青木 瞳', '#01', now-2*DAY, now+6*DAY, [{text:'1', sheets:null}, {text:'13', sheets:null}]);
-  newOrder('LO', '森田 健吾', '#01', now-2*DAY, now+6*DAY, [{text:'14', sheets:null}]);
-  newOrder('LO', '高橋 さくら', '#01', now-2*DAY, now+12*DAY, [{text:'9', sheets:null}, {text:'15', sheets:null}]);
+  newOrder('LO', '青木 瞳', '#01', at(bdAgo(2), 11), due18(day0, 6), [{text:'1', sheets:null}, {text:'13', sheets:null}]);
+  newOrder('LO', '森田 健吾', '#01', at(bdAgo(2), 11), due18(day0, 6), [{text:'14', sheets:null}]);
+  newOrder('LO', '高橋 さくら', '#01', at(bdAgo(2), 11), due18(day0, 8), [{text:'9', sheets:null}, {text:'15', sheets:null}]);
   // C012 を「21」と書き間違えた追加発注（書き間違いの例）
-  newOrder('LO', '高橋 さくら', '#01', now-1*DAY, now+24*DAY, [{text:'21', sheets:null}]);
-  newOrder('GEN', '青木 瞳', '#01', now-1*DAY, now+24*DAY, [{text:'13', sheets:null}]);
-  newOrder('GEN', '森田 健吾', '#01', now-1*DAY, now+24*DAY, [{text:'14', sheets:null}]);
-  newOrder('GEN', 'スタジオ北斗（外注）', '#01', now-1*DAY, now+24*DAY, [{text:'15', sheets:null}]);
-  newOrder('SHIAGE', '堀 奈々', '#01', now-2*DAY, now+25*DAY, [{text:'10', sheets:sheetsOf('C010','SHIAGE')}]);
-  newOrder('LO', '森田 健吾', '#02', now-1*DAY, now+10*DAY, [{text:'4', sheets:null}, {text:'5', sheets:null}, {text:'6', sheets:null}]);
+  newOrder('LO', '高橋 さくら', '#01', at(bdAgo(1), 15), due18(day0, 15), [{text:'21', sheets:null}]);
+  newOrder('GEN', '青木 瞳', '#01', at(bdAgo(1), 15), due18(day0, 15), [{text:'13', sheets:null}]);
+  newOrder('GEN', '森田 健吾', '#01', at(bdAgo(1), 15), due18(day0, 15), [{text:'14', sheets:null}]);
+  newOrder('GEN', 'スタジオ北斗（外注）', '#01', at(bdAgo(1), 15), due18(day0, 15), [{text:'15', sheets:null}]);
+  newOrder('SHIAGE', '堀 奈々', '#01', at(bdAgo(2), 11), due18(day0, 6), [{text:'10', sheets:sheetsOf('C010','SHIAGE')}]);
+  newOrder('LO', '森田 健吾', '#02', at(bdAgo(1), 15), due18(day0, 6), [{text:'4', sheets:null}, {text:'5', sheets:null}, {text:'6', sheets:null}]);
 }
 
 function qrSvg(text){
