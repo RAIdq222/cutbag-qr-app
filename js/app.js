@@ -70,12 +70,14 @@ async function doSync(pid){
     const touched = p.fullNext ? null : new Set([...changed.events.map(e=>e.cut), ...changed.cuts.map(c=>c.id), ...changed.qrs.map(q=>q.cut), ...sheetCuts]);
     // ふだんの送信は、話数のシートの行（データ）だけ。表を作り直すのは初期化のときと、全部の行を送り直すときだけ
     const tables = p.oldGas ? null : withS(committed(p.S), ()=>buildTables(touched));
-    const body = !tables ? {} : touched && (p.gasV||0) >= 3 ? {tables:slimTables(pid, tables), dataOnly:true} : {tables, dataOnly: !!touched};
+    // 起動してはじめての送信は、表を全部送る（どの表がスプレッドシートにあるかを、送った中身で覚える）
+    const slim = !!(touched && (p.gasV||0) >= 3 && p.tblSent);
+    const body = !tables ? {} : slim ? {tables:slimTables(pid, tables), dataOnly:true} : {tables, dataOnly: !!touched};
     const j = await api(pr, 'upsert', {...changed, ...body});
     gotReply(pid, j);
     if(tables) rememberCells(pid, body.tables || tables);
     if(p.tblSentNext){ Object.assign(p.tblSent, p.tblSentNext); p.tblSentNext = null; }
-    if(tables && !body.dataOnly) p.tblSent = Object.fromEntries(Object.entries(tables).filter(([n,t])=>!t.prog).map(([n,t])=>[n, JSON.stringify(t)]));
+    if(tables && !slim) p.tblSent = Object.fromEntries(Object.entries(tables).filter(([n,t])=>!t.prog).map(([n,t])=>[n, JSON.stringify(t)]));
     afterWrite(pid, j.rebuilt);
     Object.keys(KEYS).forEach(k=>changed[k].forEach(x=>p.sent[k].set(x[KEYS[k]], JSON.stringify(x))));
     sheetCuts.forEach(id=>p.sheetCuts.delete(id));
@@ -97,10 +99,42 @@ function gotReply(pid, j){
   if(j.v) p.gasV = j.v;
   if(j.times){ p.times = [{at:Date.now(), action:j.action, ...j.times}, ...(p.times||[])].slice(0, 5); }
   if(j.warnings) p.warnings = j.warnings;
+  if(j.evRows!=null) p.evRows = j.evRows;
+  // 日報などの型を、まだ預けていなければ預ける（1回だけ。10分ごとの更新で使う）
+  if(j.needReports && !p.tplSending){ p.tplSending = true; api(projOf(pid), 'reportTemplates', {reports:REPORT_TEMPLATES, ver:REPORT_VER}).catch(()=>{}).finally(()=>{ p.tplSending = false; }); }
+}
+// ほかの人の更新を取りに行く（読み取りを始めるとき・アプリに戻ったとき・完了の前）。
+// 増えた履歴だけを足し、カット・QR は送っていない変更がなければ入れ替える。返り値：ほかの人が更新したカットの ID と、その履歴
+async function refresh(pid){
+  const p = PJ[pid], pr = projOf(pid);
+  if(!p || !pr || !pr.endpoint || (p.gasV||0) < 4 || p.evRows==null) return null;
+  const j = await api(pr, 'since', {evRows:p.evRows});
+  // ほかの端末で初期化された（履歴が減った）：全部を読み直し、前に送ったセルの覚えも消す
+  if(j.evRows < p.evRows){ p.cells = {}; store.set(cellsKey(pid), {}); p.tblSent = null; await reload(pid, true); return null; }
+  gotReply(pid, j);
+  const known = new Set(p.S.events.map(e=>e.no)), add = (j.events||[]).filter(e=>!known.has(e.no));
+  if(add.length){
+    p.S.events.push(...add); p.S.events.sort((a,b)=>a.no-b.no);
+    p.S.seq = Math.max(p.S.seq, ...add.map(e=>e.no||0));
+    add.forEach(e=>p.sent.events.set(e.no, JSON.stringify(e)));
+    const fromSheet = add.filter(e=>e.via==='sheet').map(e=>e.cut);
+    if(fromSheet.length) p.sheetCuts = new Set([...(p.sheetCuts||[]), ...fromSheet]);
+  }
+  // 送っていない変更（カット・QR）がなければ、スプレッドシートの内容に入れ替える
+  const clean = k => p.S[k].every(x=>p.sent[k].get(x[KEYS[k]])===JSON.stringify(x));
+  if(clean('cuts') && clean('qrs')){
+    ['cuts','qrs'].forEach(k=>{ if(j[k]){ p.S[k] = j[k]; p.sent[k] = new Map(j[k].map(x=>[x[KEYS[k]], JSON.stringify(x)])); } });
+  }
+  if(pid===cfg.current) S = p.S;
+  store.set(dataKey(pid), rawOf(p.S));
+  const by = new Map(); add.forEach(e=>{ if(!by.has(e.cut)) by.set(e.cut, []); by.get(e.cut).push(e); });
+  return by;
 }
 // 話数のシートで、前に送ったセル（カットごと）。変わったセルだけを送る（人がスプレッドシートで直したセルを、同じ値で上書きしない）
 const cellsKey = pid => 'cutbagqr.cells.' + pid;
 function sentCells(pid){ const p = PJ[pid]; if(!p.cells) p.cells = store.get(cellsKey(pid)) || {}; return p.cells; }
+// このカットの行は、次の送信で全部のセルを書き直す（スプレッドシートの変更を元に戻すとき）
+function forgetCells(cutId){ const pid = cfg.current, m = sentCells(pid); delete m[cutId]; store.set(cellsKey(pid), m); }
 function rememberCells(pid, tables){
   const m = sentCells(pid);
   Object.values(tables).forEach(t=>{ if(!t.prog) return; t.rows.forEach(r=>{ const x = m[r.id] || (m[r.id] = {}); r.cells.forEach(c=>{ x[c[0]] = JSON.stringify(c.slice(1)); }); }); });
@@ -112,7 +146,7 @@ function slimTables(pid, tables){
   p.tblSent = p.tblSent || {};
   Object.entries(tables).forEach(([name, t])=>{
     // ほかの表（履歴ログ・QR管理など）は、前に送ったものと中身が違うときだけ
-    if(!t.prog){ if(t.report) return; const h = JSON.stringify(t); if(p.tblSent[name]!==h){ out[name] = t; p.tblSentNext = {...(p.tblSentNext||{}), [name]:h}; } return; }
+    if(!t.prog){ const h = JSON.stringify(t); if(p.tblSent[name]!==h){ out[name] = t; p.tblSentNext = {...(p.tblSentNext||{}), [name]:h}; } return; }
     const rows = t.rows.map(r=>{ const x = m[r.id]; return x ? {...r, cells:r.cells.filter(c=>x[c[0]]!==JSON.stringify(c.slice(1)))} : r; }).filter(r=>r.cells.length);
     if(!rows.length) return;
     out[name] = {...t, rows, template:{heads:t.template.heads, cols:t.template.cols.map(c=>({c:c.c, h:c.h, key:c.key, fmt:c.fmt}))}};
@@ -172,7 +206,8 @@ function warnView(){
   const list = (PJ[cfg.current].warnings || []);
   return `<div class="sheetm" role="dialog" aria-label="スプレッドシートの要確認"><h4>スプレッドシートの要確認</h4>
     <ul class="notice">${list.map(w=>`<li class="nt-warn"><b>${esc(w.sheet)}</b><span>${esc(w.msg)}</span></li>`).join('')}</ul>
-    <p class="mnote">スプレッドシートを直すと、次の送信で消えます。</p>
+    <p class="mnote">セルの入力は、スプレッドシートを直すと消えます。行・列の削除などの知らせは「確認した」で消えます。</p>
+    ${list.some(w=>w.kind==='change') ? `<button class="act ghost" data-a="warnClear">確認した</button>` : ''}
     <button class="closebtn" data-a="closeModal">閉じる</button></div>`;
 }
 function oldDataLine(){
@@ -355,6 +390,7 @@ function appAction(a, t){
   if(a==='opSave'){ cfg.operator = $('#cfgOp').value.trim() || OPERATOR; cfg.org = $('#cfgOrg').value.trim(); OPERATOR = cfg.operator; saveCfg(); flashToast('保存しました'); return true; }
   if(a==='pjPick'){ ui.modal = 'pj'; renderPhone(); return true; }
   if(a==='warnShow'){ ui.modal = 'warn'; renderPhone(); return true; }
+  if(a==='warnClear'){ const p = PJ[cfg.current]; p.warnings = (p.warnings||[]).filter(w=>w.kind!=='change'); ui.modal = null; renderPhone(); api(curProj(), 'clearWarn').catch(()=>{}); return true; }
   if(a==='print'){ location.href = 'print.html'; return true; }
   if(a==='resetAsk'){ ui.confirmReset = true; renderPhone(); return true; }
   if(a==='resetNo'){ ui.confirmReset = false; renderPhone(); return true; }
@@ -498,7 +534,9 @@ function feedback(ok){
 }
 
 // ほかの端末・PCで変えた分を取り込むため、ホームを開いているあいだは時々読み直す
-setInterval(()=>{ if(ui && ['home','manage','dash','review'].includes(ui.screen) && !ui.modal){ const p = PJ[cfg.current]; if(p && !p.syncing && !p.sync.pending) reload(cfg.current, true); } }, 30000);
+setInterval(()=>{ if(ui && ['home','manage','dash','review'].includes(ui.screen) && !ui.modal){ const p = PJ[cfg.current]; if(p && !p.syncing && !p.sync.pending){ if((p.gasV||0) >= 4 && p.evRows!=null) refresh(cfg.current).then(()=>{ if(!ui.modal) renderPhone(); }).catch(()=>{}); else reload(cfg.current, true); } } }, 30000);
+// アプリに戻ってきたら、ほかの人の更新を取りに行く
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && ui){ refresh(cfg.current).then(()=>{ if(!ui.modal) renderPhone(); }).catch(()=>{}); } });
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden) camStop(); else if(ui && ui.screen==='scanner') camStart(); });
 // Android アプリ（Capacitor）の中では端末のファイルから開くので、Service Worker は使わない
 if('serviceWorker' in navigator && location.protocol==='https:' && !window.Capacitor) navigator.serviceWorker.register('sw.js').catch(()=>{});

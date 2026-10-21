@@ -928,3 +928,18 @@ em.late{margin-left:4px}
 .flow2 .fl.can{box-shadow:inset 3px 0 0 var(--accent)}
 .flow2 .fl-who{white-space:normal;overflow:visible;line-height:1.35}
 .flow2 .fl-who .tagx{display:block;margin-left:0;font-size:10.5px}
+
+/* 読み取りの前とあと */
+.sr-flow{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:2px 0 4px;font-size:13px}
+.sr-flow .was{color:var(--muted)}
+.sr-flow .arr{color:var(--muted);font-weight:700}
+.sr-flow .now{color:var(--ok);font-weight:700}
+.sr-flow.big{font-size:15px;margin:6px 0 8px}
+
+/* スプレッドシートで、アプリの記録が書き換えられたとき */
+.conflict{border:1px solid var(--danger);border-radius:10px;padding:10px 12px;margin:8px 0}
+.conflict p{margin:0 0 8px}
+
+/* 読み取ったカットを、ほかの人が先に更新していたとき */
+.sr-conflict{border-top:1px dashed var(--danger);margin-top:6px;padding-top:6px;color:var(--danger);font-size:13px}
+.sr-conflict .row2{margin-top:6px}

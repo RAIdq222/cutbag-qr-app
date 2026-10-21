@@ -144,15 +144,28 @@ function derive(cutId){
   const c = cutById(cutId), voided = voidedSet();
   const all = S.events.filter(e=>e.cut===cutId && !voided.has(e.no) && e.type!=='VOID');
   const d = {route:[...((c && c.route) || DEFAULT_ROUTE)], sid:null, phase:'wait', holder:SHELF, cells:{}, open:null, ret:null, rtCount:0, retCount:0,
-    lastTs:null, since:null, from:null, retakes:[], returns:[], next:null, evs:all, due:null};
+    lastTs:null, since:null, from:null, retakes:[], returns:[], next:null, evs:all, due:null, conflicts:[]};
+  // 「元に戻す」を選んだ、スプレッドシートでの変更（KEEP の ackOf）
+  const kept = new Set(all.filter(e=>e.type==='KEEP').map(e=>e.ackOf));
+  // QR の読み取り・アプリの操作で入った日付は、その履歴の番号を覚えておく（スプレッドシートで消されても、こちらを正にする）
+  const byApp = (x, f, e) => { x[f+'Ev'] = e.no; };
   d.sid = d.route[0];
   const cell = sid => d.cells[sid] || (d.cells[sid] = {});
   const afterOf = sid => { const i = d.route.indexOf(sid); return i>=0 && i+1<d.route.length ? d.route[i+1] : null; };
   for(const e of all){
     if(LIVE.includes(e.type)) d.lastTs = e.ts;
     if(e.type==='ROUTE'){ d.route = [...e.route]; continue; }
+    if(e.type==='KEEP') continue;
     if(e.type==='SET'){
-      const x = cell(e.stage); x[e.field] = e.value; x[e.field+'Src'] = '';
+      const x = cell(e.stage);
+      // スプレッドシートで、QR・アプリで入った日付を消した・書き換えた：記録も状態も変えずに「要確認」にする（元に戻す／取り消すを選ぶ）
+      if(e.via==='sheet' && ['in','up','rin','rup'].includes(e.field) && x[e.field+'Ev'] && !kept.has(e.no)
+        && (e.value ? startOfDay(e.value) : 0) !== (x[e.field] ? startOfDay(x[e.field]) : 0)){
+        d.conflicts.push({no:e.no, stage:e.stage, field:e.field, sheet:e.value, app:x[e.field], appEv:x[e.field+'Ev'], op:e.op, ts:e.ts});
+        continue;
+      }
+      if(kept.has(e.no)) continue;
+      x[e.field] = e.value; x[e.field+'Src'] = ''; if(['in','up','rin','rup'].includes(e.field)) delete x[e.field+'Ev'];
       if(e.field==='person' && e.stage===d.sid && d.phase==='in') d.holder = e.value;
       if(e.field==='due' && e.stage===d.sid) d.due = e.value;
       // 今の工程の IN・UP を入れたら（スプレッドシートで直したときも）、状態も進める。空にしたら戻す。日付は入れた日
@@ -168,7 +181,7 @@ function derive(cutId){
     if(e.type==='IN'){
       const x = cell(e.stage);
       d.sid = e.stage; d.phase = 'in'; d.holder = e.person;
-      if(x.in && (d.open || d.ret || x.up)) x.rin = e.ts; else x.in = e.ts;
+      if(x.in && (d.open || d.ret || x.up)){ x.rin = e.ts; byApp(x, 'rin', e); } else { x.in = e.ts; byApp(x, 'in', e); }
       x.person = e.person; x.personSrc = e.src || '';
       x.due = e.due || null; x.dueSrc = e.dueSrc || ''; d.due = x.due;
       if(e.sheets!=null){ x.sheets = e.sheets; x.sheetsSrc = e.sheetsSrc || ''; }
@@ -176,7 +189,7 @@ function derive(cutId){
       d.next = null;
     } else if(e.type==='UP'){
       const x = cell(d.sid);
-      if(x.rin && !x.rup) x.rup = e.ts; else if(!x.up) x.up = e.ts; else x.rup = e.ts;
+      if(x.rin && !x.rup){ x.rup = e.ts; byApp(x, 'rup', e); } else if(!x.up){ x.up = e.ts; byApp(x, 'up', e); } else { x.rup = e.ts; byApp(x, 'rup', e); }
       d.phase = 'review'; d.from = d.holder; d.holder = '制作（確認中）'; d.since = e.ts;
     } else if(e.type==='OK'){
       const x = cell(d.sid);
@@ -192,14 +205,14 @@ function derive(cutId){
     } else if(e.type==='RETURN'){
       const r = {...e.rt, ts:e.ts, closed:null, note:e.note, person:e.person, due:e.due||null};
       d.returns.push(r); d.ret = r; d.retCount++;
-      const x = cell(d.sid); x.rin = e.ts; x.rup = null; if(e.due){ x.due = e.due; x.dueSrc = ''; }
+      const x = cell(d.sid); x.rin = e.ts; byApp(x, 'rin', e); x.rup = null; if(e.due){ x.due = e.due; x.dueSrc = ''; }
       d.phase = 'in'; d.holder = e.person; d.due = e.due || x.due || null;
     } else if(e.type==='RETAKE'){
       if(d.open){ d.open.closed = e.ts; d.open.chained = true; }
       const r = {...e.rt, ts:e.ts, closed:null, note:e.note, person:e.person, due:e.due||null};
       d.retakes.push(r); d.open = r; d.rtCount++;
       cell(r.raised).rtc = e.ts;
-      const x = cell(e.stage); x.rin = e.ts; x.rup = null; x.person = e.person; x.personSrc = ''; if(e.due){ x.due = e.due; x.dueSrc = ''; }
+      const x = cell(e.stage); x.rin = e.ts; byApp(x, 'rin', e); x.rup = null; x.person = e.person; x.personSrc = ''; if(e.due){ x.due = e.due; x.dueSrc = ''; }
       d.sid = e.stage; d.phase = 'in'; d.holder = e.person; d.due = e.due || null;
     }
   }
@@ -308,6 +321,8 @@ function act(cutId, type, o={}, ts=clock()){
     ev.stage = o.stage; ev.field = o.field; ev.value = o.value;
   } else if(type==='ROUTE'){
     ev.route = o.route; ev.stage = o.stage || d.sid;
+  } else if(type==='KEEP'){
+    ev.ackOf = o.ackOf; ev.stage = o.stage;
   } else {
     ev.stage = d.sid;
   }
@@ -324,10 +339,14 @@ function defaultAct(cutId, extra={}, ts){
 }
 /* ================= 通知（マイページ） ================= */
 // 進行が手を打たないと進まないもの
+// スプレッドシートで、QR・アプリで入った日付が消された・書き換えられたときの文
+const conflictText = x => `スプレッドシートで ${nameOf(x.stage)}の${FIELD_NAME[x.field]||x.field}が${x.sheet ? ` ${fD(x.sheet)} に書き換え` : '消'}られました（アプリの記録は ${fD(x.app)}。${x.op||''}）`;
 function notices(){
   const out = [], now = clock(), linked = linkedLines(), v = voidedSet();
   S.cuts.forEach(c=>{
-    const d = derive(c.id); if(d.phase==='done') return;
+    const d = derive(c.id);
+    d.conflicts.forEach(x=>out.push({k:'conflict', cut:c, text:conflictText(x)}));   // 完了したカットでも出す
+    if(d.phase==='done') return;
     if(d.overdue) out.push({k:'due', cut:c, text:`${nameOf(d.sid)}の納期（${fD(d.due)}）を過ぎています。${d.holder}`});
     if(d.phase==='review' && now - d.since >= 2*DAY) out.push({k:'review', cut:c, text:`${nameOf(d.sid)}を ${fD(d.since)} に回収してから、確認が終わっていません`});
     if(d.open && d.phase==='in' && now - d.open.ts >= 3*DAY) out.push({k:'retake', cut:c, text:`リテイク（${nameOf(d.open.target)}）が ${fD(d.open.ts)} から戻っていません`});
@@ -382,14 +401,14 @@ function seed(){
   const R = (...add) => DEFAULT_ROUTE.concat(add).sort((a,b)=>ORDER[a]-ORDER[b]);
   const defs = [
     // 話数, no, パート, 秒, 通す工程, 到達工程, 状態（in=作業中・チェック中／review=回収済み・確認待ち／wait=配布待ち）, 開始（何日前）, 最終（何日前）
-    ['#01','C001','A','3+12', R('LOKAN'),  'DONE',  '',      30, 2],
+    ['#01','C001','A','3+12', R(),         'LO',    'wait',   0, 0],   // デモの1枚目：LO の配布から順に進めて見せる
     ['#01','C002','A','5+00', R(),         'HONSATSU','in',  28, 1],
     ['#01','C003','A','2+18', R(),         'GENEN', 'wait',  20, 1.2],
     ['#01','C004','A','6+06', R(),         'GEN',   'in',    24, 0.6],
     ['#01','C005','B','4+00', R(),         'DOU',   'in',    22, 1],
     ['#01','C006','B','3+06', R('GENSOSK'),'GENSK', 'in',    21, 0.7],
     ['#01','C007','B','7+12', R(),         'GENSK', 'in',    18, 0.5],
-    ['#01','C008','B','1+18', R('GENSOSK'),'GENSOSK','in',   16, 0.4],
+    ['#01','C008','B','1+18', R('LOKAN','GENSOSK'),'DONE','', 30, 2],
     ['#01','C009','C','3+00', R(),         'LO',    'wait',   0, 0],
     ['#01','C010','C','2+12', R(),         'SHIAGE','wait',  25, 1.5],
     ['#01','C011','C','4+18', R(),         'DOKEN', 'review',23, 0.8],
@@ -459,7 +478,7 @@ function seed(){
       e.po = o.no; e.poLine = li; if(o.lines[li].sheets!=null){ e.sheets = o.lines[li].sheets; e.sheetsSrc = SRC_AUTO; } });
   });
   // これから配布するカットの発注書（発注は作業より先に出ている）
-  newOrder('LO', '青木 瞳', '#01', now-2*DAY, now+6*DAY, [{text:'13', sheets:null}]);
+  newOrder('LO', '青木 瞳', '#01', now-2*DAY, now+6*DAY, [{text:'1', sheets:null}, {text:'13', sheets:null}]);
   newOrder('LO', '森田 健吾', '#01', now-2*DAY, now+6*DAY, [{text:'14', sheets:null}]);
   newOrder('LO', '高橋 さくら', '#01', now-2*DAY, now+12*DAY, [{text:'9', sheets:null}, {text:'15', sheets:null}]);
   // C012 を「21」と書き間違えた追加発注（書き間違いの例）
@@ -565,7 +584,7 @@ function orderRowStatus(x, linked){
   return passed ? {t:'確認OK', k:'in'} : {t:'配布済', k:'in'};
 }
 const FIELD_NAME = {in:'IN', up:'UP', due:'納期', person:'担当', sheets:'枚数', rin:'リテイクIN', rup:'リテイクUP'};
-const TYPE_NAME = {IN:'配布', UP:'回収', OK:'確認OK', RETURN:'差し戻し', RETAKE:'リテイク', VOID:'取り消し', ALERT:'旧ラベル', LINK:'QR登録', SET:'入力', ROUTE:'工程の追加・削除', REQ:'発注書の更新依頼'};
+const TYPE_NAME = {IN:'配布', UP:'回収', OK:'確認OK', RETURN:'差し戻し', RETAKE:'リテイク', VOID:'取り消し', ALERT:'旧ラベル', LINK:'QR登録', SET:'入力', ROUTE:'工程の追加・削除', REQ:'発注書の更新依頼', KEEP:'スプレッドシートの変更を戻す'};
 // 日報・担当週次UP数・作監週次UP数（話数ごと）：元の Excel の式のまま。式は話数のシート（#01 など）を数える。
 // アプリが書くのは名前の欄だけ（話数の担当と、カットの LO・原画の担当から。青い文字）。型（REPORT_TEMPLATES）は、シートを作るときだけ送る
 const REPORT_SHEETS = ['日報','担当週次UP数','作監週次UP数'];
@@ -597,7 +616,7 @@ function reportTable(ep, kind){
     refs:{進捗表:ep, ...Object.fromEntries(REPORT_SHEETS.map(k=>[k, reportName(ep, k)]))}};
 }
 // 日報・週次UP数のシートは、いったん作らない（作る処理を軽くしてから戻す）
-let REPORTS_ON = false;
+let REPORTS_ON = true;   // 名前の欄だけを送る。シートは Apps Script が10分ごとに作る・書く
 function buildTables(only){
   const out = {};
   epsOf().forEach(ep=>{ out[ep] = progTable(ep, only); if(REPORTS_ON) REPORT_SHEETS.forEach(k=>{ out[reportName(ep, k)] = reportTable(ep, k); }); });

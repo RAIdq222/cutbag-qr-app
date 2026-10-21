@@ -83,7 +83,34 @@ function scanRow(it){
   } else {
     main = `${stg(it.stage)}<span class="sr-act wide">${esc(it.text)}</span>`;
   }
-  return `<li class="sr ${it.kind}${it.voided?' void':''}"><div class="sr-body">${ctx}<div class="sr-main">${main}</div></div>${tail}</li>`;
+  // 読み取りの前とあと：どの工程の、どの状態からどの状態に変わるか
+  const flow = it.voided ? (it.before ? `<div class="sr-flow"><span class="was">${esc(it.before)}</span>のまま</div>` : '')
+    : it.before && it.after ? `<div class="sr-flow"><span class="was">${esc(it.before)}</span><span class="arr" aria-label="から">→</span><b class="now">${esc(it.after)}</b></div>`
+    : it.before ? `<div class="sr-flow"><span class="was">今：${esc(it.before)}</span></div>` : '';
+  const cf = it.conflict && !it.voided && !it.conflictOk ? `<div class="sr-conflict"><span>${esc(it.conflict)}</span><div class="row2"><button type="button" class="act ghost" data-cf-drop="${it.no}">この読み取りをやめる</button><button type="button" class="act" data-cf-ok="${it.no}">このまま登録する</button></div></div>` : '';
+  return `<li class="sr ${it.kind}${it.voided?' void':''}"><div class="sr-body">${ctx}${flow}<div class="sr-main">${main}</div>${cf}</div>${tail}</li>`;
+}
+// 完了：納期を確かめ、ほかの人の更新を取りに行き、同じカットが先に更新されていたらその行で選んでもらってから登録する
+async function closeScan(){
+  const sc = ui.scan, evs = sessionEvents(sc), noDue = evs.filter(e=>e.type==='IN' && !e.due).length;
+  if(noDue){ flashToast(`納期未入力が ${noDue}件あります`); return; }
+  if(sc.items.some(it=>it.conflict && !it.conflictOk && !it.voided)){ flashToast('ほかの人が先に更新したカットがあります。行で選んでください'); return; }
+  if(evs.length && !sc.checked){
+    sc.checking = true; renderPhone();
+    let by = null;
+    try{ by = await refresh(cfg.current); }catch(e){}
+    sc.checking = false; sc.checked = true;
+    const hit = by ? sc.items.filter(it=>it.kind==='ok' && !it.voided && by.has(it.cut)) : [];
+    hit.forEach(it=>{ const e = by.get(it.cut).slice(-1)[0];
+      it.conflict = `${fDT(e.ts)} に ${e.op||''}が、このカットを${e.type==='SET' ? `スプレッドシートで${nameOf(e.stage)}の${FIELD_NAME[e.field]||e.field}を更新` : `${nameOf(e.stage)}で${TYPE_NAME[e.type]||e.type}`}しています`; });
+    if(hit.length){ renderPhone(); flashToast('ほかの人が先に更新したカットがあります。行で選んでください'); return; }
+  }
+  const list = sessionEvents(sc);
+  list.forEach(e=>{ delete e.draft; });
+  const n = list.filter(e=>e.type!=='ALERT').length;
+  go('home');
+  // スプレッドシートに届いたら「登録しました」に変わる（donePop は app.js）
+  if(list.length){ if(n) donePop(n, list.map(e=>e.no)); sync(); }
 }
 function sessionIns(){
   if(!ui.scan) return [];
@@ -98,7 +125,7 @@ function scannerView(){
       ${camMsg() ? `<span class="ftext">${camMsg()}</span>` : ''}</div>
     <div class="sess-count"><span><b>${nIn+nUp}</b>件<small>（配布 ${nIn}・回収 ${nUp}）</small></span>${sessionIns().length>1 ? `<button type="button" class="linkbtn due-all" data-a="dueAll">納期をまとめて設定</button>` : ''}</div>
     ${s.items.length ? `<ul class="sess-list">${[...s.items].reverse().map(scanRow).join('')}</ul>` : ''}
-    <button type="button" class="act sticky" data-a="closeScan">完了（登録する）</button>
+    <button type="button" class="act sticky" data-a="closeScan"${ui.scan && ui.scan.checking ? ' disabled' : ''}>${ui.scan && ui.scan.checking ? 'ほかの人の更新を確かめています…' : '完了（登録する）'}</button>
   </div>`;
 }
 // 読み取った分は「完了」で登録する。それまでは下書き（スプレッドシートには送らない）
@@ -140,6 +167,7 @@ function cutRow(c, d, opt={}){
   if(t.at) dates.push(`${t.label} ${fD(t.at)}${t.days!=null && t.days>=STALE_DAYS ? `<em class="aged">${t.days}日経過</em>` : ''}`);
   else if(t.label!=='IN') dates.push(t.label);
   if(d.phase==='in') dates.push(t.due ? `納期 ${fD(t.due)}${t.over ? '<em class="late">納期超過</em>' : ''}` : '納期 未入力');
+  if(d.conflicts.length) dates.push('<em class="late">要確認（スプレッドシートの変更）</em>');
   const who = d.phase==='in' ? `<span class="fr-who">${esc(d.holder)}</span>` : '';
   return `<button type="button" class="find-row" data-open="${c.id}"><b>${opt.ep ? `<small>${esc(c.ep)}</small>` : ''}${esc(c.no)}</b><span class="fr-st"><i class="dot ${st.k}"></i>${esc(stateText(d))}${who}</span><small class="fr-dates">${dates.join('　')}</small></button>`;
 }
@@ -176,6 +204,7 @@ function cutView(){
   <div class="body">
     <div class="cuthead"><div><div class="sub">${esc(titleOf())}　${esc(c.ep)}</div><div class="big">${esc(c.no)}</div><div class="sub">パート${esc(c.part||'')}　${esc(c.sec||'')}秒</div></div>
       <div class="ch-st"><span class="chip ${st.k}">${esc(stateText(d))}</span>${d.stale ? `<span class="stop">止まっている：${esc(d.holder)}（${d.days}日）</span>` : ''}</div></div>
+    ${d.conflicts.map(x=>`<div class="conflict"><p>${esc(conflictText(x))}</p><div class="row2"><button type="button" class="act ghost" data-cf-keep="${x.no}" data-cf-stage="${x.stage}">元に戻す（${fD(x.app)}）</button><button type="button" class="act rtb" data-cf-undo="${x.appEv}">取り消す</button></div><p class="mnote">元に戻す：スプレッドシートに ${fD(x.app)} を書き戻します。取り消す：アプリの${esc(FIELD_NAME[x.field]||x.field)}を取り消して、状態も戻します。</p></div>`).join('')}
     <ol class="flow2"><li class="fl head"><span>工程</span><span>担当</span><span class="fl-d">IN</span><span class="fl-d">UP</span><span class="fl-d">納期</span></li>${rows}</ol>
     ${d.phase!=='done' ? `<div class="flow-tools"><button type="button" class="linkbtn" data-a="routeEdit">工程の追加・削除</button></div>` : ''}
     <div><div class="lbl">履歴（だれが・いつ更新したか）</div><ul class="hist2">${[...mine].reverse().map(e=>`<li class="${voided.has(e.no)?'void':''}">
@@ -319,6 +348,7 @@ function modalView(){
     const n = nextOf(d), work = ST[d.sid].kind==='work', x = d.cells[d.sid] || {};
     const needPo = n && ST[n].po && !findOrderLine(c.id, n);
     return `<div class="sheetm" role="dialog" aria-label="確認OK">${ctxLine(c, d.sid)}<h4>確認OK</h4>
+      <div class="sr-flow big"><span class="was">${esc(stateText(d))}</span><span class="arr" aria-label="から">→</span><b class="now">${n ? `${esc(nameOf(n))}の配布待ち` : '完了'}</b></div>
       <p class="mnote">${esc(d.from||'')} から ${fD(d.since)} に回収。次は ${n ? `<b>${esc(nameOf(n))}</b>` : '<b>完了</b>'}です。</p>
       ${n ? pickBtn('person', n, `配布先（${esc(nameOf(n))}）`) + dueBtnF('due', '納期') : ''}
       ${work ? `<div class="field"><label class="lbl" for="okSheets">枚数</label><input id="okSheets" type="number" inputmode="numeric" min="0" value="${esc(f.sheets ?? x.sheets ?? '')}"></div>` : ''}
@@ -383,13 +413,13 @@ async function scan(token){
   await sleep(250);
   ui.scanning = false;
   const cut = cutById(q.cut), d = derive(q.cut);
-  const push = it => { sc.items.push({cut:q.cut, cutNo:cut.no, ...it}); ui = {screen:'scanner', scan:sc}; renderPhone(); };
+  const push = it => { sc.items.push({cut:q.cut, cutNo:cut.no, ...it}); sc.checked = false; ui = {screen:'scanner', scan:sc}; renderPhone(); };
   if(q.status==='revoked'){ const r = act(q.cut,'ALERT',{qr:token, note:'使えなくしたQRを読み取り（更新しない）'}); r.ev.draft = true; push({no:r.ev.no, text:'旧ラベルです。カット袋のラベルを確かめてください', kind:'bad'}); return; }
-  if(d.phase==='review'){ push({stage:d.sid, text:'回収済み（回収済みカットの確認で確認します）', kind:'info'}); return; }
+  if(d.phase==='review'){ push({stage:d.sid, text:'回収済み（回収済みカットの確認で確認します）', kind:'info', before:stateText(d)}); return; }
   if(d.phase==='done'){ push({text:'完了したカットです', kind:'info'}); return; }
   const r = defaultAct(q.cut, {qr:token});
-  if(r.ok){ r.ev.draft = true; push({no:r.ev.no, kind:'ok'}); return; }
-  if(r.need==='order'){ push({stage:d.sid, kind:'need'}); return; }
+  if(r.ok){ r.ev.draft = true; push({no:r.ev.no, kind:'ok', before:stateText(r.before), after:stateText(r.after)}); return; }
+  if(r.need==='order'){ push({stage:d.sid, kind:'need', before:stateText(d), after:`${nameOf(d.sid)}の作業中`}); return; }
   push({text:r.msg||'登録できません', kind:'info'});
 }
 function flashToast(msg){ ui.toast = msg; renderPhone(); clearTimeout(flashToast.t); flashToast.t = setTimeout(()=>{ ui.toast = null; renderPhone(); }, 2600); }
@@ -460,6 +490,10 @@ $('#screen').addEventListener('click', e=>{
   let t;
   if((t = T('[data-reason]'))){ readForm(); ui.form.reason = t.dataset.reason; renderPhone(); return; }
   if((t = T('[data-rtmode]'))){ readForm(); ui.form.mode = t.dataset.rtmode; ui.form.reason = null; renderPhone(); return; }
+  if((t = T('[data-cf-drop]'))){ const no = Number(t.dataset.cfDrop); S.events = S.events.filter(x=>!(x.no===no && x.draft)); const it = ui.scan.items.find(x=>x.no===no); if(it) it.voided = true; renderPhone(); return; }
+  if((t = T('[data-cf-ok]'))){ const it = ui.scan.items.find(x=>x.no===Number(t.dataset.cfOk)); if(it) it.conflictOk = true; renderPhone(); return; }
+  if((t = T('[data-cf-keep]'))){ act(ui.cut, 'KEEP', {ackOf:Number(t.dataset.cfKeep), stage:t.dataset.cfStage, note:'スプレッドシートの変更を戻す'}); forgetCells(ui.cut); renderPhone(); sync(); return; }
+  if((t = T('[data-cf-undo]'))){ const no = Number(t.dataset.cfUndo), ev = S.events.find(x=>x.no===no); if(ev) act(ev.cut, 'VOID', {voidOf:no, note:`${evText(ev)} を取り消し（スプレッドシートの変更に合わせる）`}); renderPhone(); sync(); return; }
   if((t = T('[data-undo-ev]'))){
     const no = Number(t.dataset.undoEv), ev = S.events.find(x=>x.no===no);
     if(ev.draft) S.events = S.events.filter(x=>x.no!==no);
@@ -492,19 +526,12 @@ $('#screen').addEventListener('click', e=>{
   if(appAction(a, t)) return;
   if(a==='go'){ go(t.dataset.to); }
   else if(a==='cutBack'){ const f = ui.from || {screen:'manage'}; go(f.screen || 'manage', {ep:f.ep, q:f.q, filter:f.filter}); }
-  else if(a==='scan'){ go('scanner', {scan:{items:[]}}); }
+  else if(a==='scan'){ go('scanner', {scan:{items:[]}}); refresh(cfg.current).catch(()=>{}); }
   else if(a==='goReview'){ go('review'); }
   else if(a==='goManage'){ go('manage'); }
   else if(a==='goDash'){ go('dash'); }
-  else if(a==='closeScan'){
-    const evs = sessionEvents(ui.scan), noDue = evs.filter(e=>e.type==='IN' && !e.due).length;
-    if(noDue){ flashToast(`納期未入力が ${noDue}件あります`); return; }
-    evs.forEach(e=>{ delete e.draft; });
-    const n = evs.filter(e=>e.type!=='ALERT').length;
-    go('home');
-    // スプレッドシートに届いたら「登録しました」に変わる（donePop は app.js）
-    if(evs.length){ if(n) donePop(n, evs.map(e=>e.no)); sync(); }
-  }
+  else if(a==='closeScan'){ closeScan(); }
+
   else if(a==='scanBack'){ if(sessionEvents(ui.scan).length){ ui.modal = 'scanBack'; renderPhone(); } else go('home'); }
   else if(a==='scanDiscard'){ dropDrafts(ui.scan); go('home'); flashToast('読み取った分を取り消しました'); }
   else if(a==='closeModal'){ ui.modal = null; renderPhone(); }
