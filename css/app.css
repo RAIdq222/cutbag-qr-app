@@ -1,36 +1,16 @@
 
 :root{
-  --bg:#EDF0F4; --surface:#FFFFFF; --surface-2:#F6F8FB; --ink:#18212F; --muted:#5A6477; --line:#D3D9E2;
-  --navy:#1D2C4F; --navy-ink:#FFFFFF; --accent:#2457C5; --accent-soft:#E3EBFB;
+  /* 案D：白を基調に、差し色は緑。文字は丸ゴシック（スマホがダークモードでも白のまま） */
+  color-scheme:light;
+  --bg:#FFFFFF; --surface:#FFFFFF; --surface-2:#F4F8F3; --ink:#2B2B2B; --muted:#6B706B; --line:#E3E9E2;
+  --navy:#7ED36A; --navy-ink:#FFFFFF; --accent:#22A33A; --accent-soft:#E6F5E2;
   --kraft:#CFAE82; --kraft-2:#B8925F; --kraft-ink:#3B2A14; --label:#FBFAF6;
   --sheet-green:#188038; --sheet-head:#F1F3F4; --sheet-grid:#E1E3E6; --flash:#FFE98A;
-  --retake:#C2410C; --retake-soft:#FDE8DD; --ok:#157A3C; --ok-soft:#DDF3E4; --warn:#A15C07; --warn-soft:#FDF0D5;
-  --danger:#B42318; --danger-soft:#FDE4E1;
+  --retake:#C2410C; --retake-soft:#FDE8DD; --ok:#1E8A33; --ok-soft:#E2F5DD; --warn:#A15C07; --warn-soft:#FDF0D5;
+  --danger:#C62828; --danger-soft:#FDE4E1;
   --phone-frame:#12161D; --on-accent:#FFFFFF; --hl:#D92D20; --hl-soft:rgba(217,45,32,.16); --hl-solid:#FBE1DE; --dim-ink:#C5CBD4;
-  --font-ui:"BIZ UDPGothic","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Yu Gothic","Meiryo",system-ui,sans-serif;
-  --font-disp:"Zen Kaku Gothic New","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Yu Gothic","Meiryo",sans-serif;
-}
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    color-scheme:dark;
-    --bg:#0F141C; --surface:#18202B; --surface-2:#1F2835; --ink:#E6EAF1; --muted:#9AA5B7; --line:#2E3949;
-    --navy:#0A1224; --accent:#7EA6F5; --accent-soft:#1E2C4A;
-    --kraft:#8A6E4A; --kraft-2:#6E5536; --kraft-ink:#F3E7D3; --label:#EDEAE2;
-    --sheet-green:#5CC47E; --sheet-head:#222B38; --sheet-grid:#2B3544; --flash:#6B5A0E;
-    --retake:#FB8A55; --retake-soft:#43200F; --ok:#5CC47E; --ok-soft:#15321F; --warn:#F2B14C; --warn-soft:#3A2A0C;
-    --danger:#F7806F; --danger-soft:#43171250;
-    --phone-frame:#05070A; --on-accent:#0B1222; --hl:#FF5A4E; --hl-soft:rgba(255,90,78,.2); --hl-solid:#4A1F1C; --dim-ink:#3E4757;
-  }
-}
-:root[data-theme="dark"]{
-  color-scheme:dark;
-  --bg:#0F141C; --surface:#18202B; --surface-2:#1F2835; --ink:#E6EAF1; --muted:#9AA5B7; --line:#2E3949;
-  --navy:#0A1224; --accent:#7EA6F5; --accent-soft:#1E2C4A;
-  --kraft:#8A6E4A; --kraft-2:#6E5536; --kraft-ink:#F3E7D3; --label:#EDEAE2;
-  --sheet-green:#5CC47E; --sheet-head:#222B38; --sheet-grid:#2B3544; --flash:#6B5A0E;
-  --retake:#FB8A55; --retake-soft:#43200F; --ok:#5CC47E; --ok-soft:#15321F; --warn:#F2B14C; --warn-soft:#3A2A0C;
-  --danger:#F7806F; --danger-soft:#43171250;
-  --phone-frame:#05070A; --on-accent:#0B1222; --hl:#FF5A4E; --hl-soft:rgba(255,90,78,.2); --hl-solid:#4A1F1C; --dim-ink:#3E4757;
+  --font-ui:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN","BIZ UDPGothic","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif;
+  --font-disp:"M PLUS Rounded 1c","Hiragino Maru Gothic ProN","BIZ UDPGothic","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -723,8 +703,8 @@ body{background:var(--surface);overscroll-behavior:none;-webkit-tap-highlight-co
 
 /* ================= 2周目の画面（ホームのボタン4つ・工程の色・進行管理・制作状況） ================= */
 :root{--g-lo:#2457C5;--g-lo-s:#E3EBFB;--g-gen:#7A3FC0;--g-gen-s:#EFE6FA;--g-dou:#0F7C6B;--g-dou-s:#DDF2EE;--g-shi:#B4540A;--g-shi-s:#FCEBDA;--g-sat:#475467;--g-sat-s:#EAECF0;--review:#6B3FB8;--review-soft:#EEE6FB;--red-day:#C62828;--cal-ring:#BFD0F3}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--g-lo:#8DB1F7;--g-lo-s:#1E2C4A;--g-gen:#C3A0F2;--g-gen-s:#2E2145;--g-dou:#6FD3C2;--g-dou-s:#123430;--g-shi:#F5A962;--g-shi-s:#3A2614;--g-sat:#C4CCD8;--g-sat-s:#2A313C;--review:#C3A0F2;--review-soft:#2E2145;--red-day:#F28B82;--cal-ring:#33466B}}
-:root[data-theme="dark"]{--g-lo:#8DB1F7;--g-lo-s:#1E2C4A;--g-gen:#C3A0F2;--g-gen-s:#2E2145;--g-dou:#6FD3C2;--g-dou-s:#123430;--g-shi:#F5A962;--g-shi-s:#3A2614;--g-sat:#C4CCD8;--g-sat-s:#2A313C;--review:#C3A0F2;--review-soft:#2E2145;--red-day:#F28B82;--cal-ring:#33466B}
+@media (prefers-color-scheme: no-dark){:root:not([data-theme="light"]){--g-lo:#8DB1F7;--g-lo-s:#1E2C4A;--g-gen:#C3A0F2;--g-gen-s:#2E2145;--g-dou:#6FD3C2;--g-dou-s:#123430;--g-shi:#F5A962;--g-shi-s:#3A2614;--g-sat:#C4CCD8;--g-sat-s:#2A313C;--review:#C3A0F2;--review-soft:#2E2145;--red-day:#F28B82;--cal-ring:#33466B}}
+:root[data-theme="never"]{--g-lo:#8DB1F7;--g-lo-s:#1E2C4A;--g-gen:#C3A0F2;--g-gen-s:#2E2145;--g-dou:#6FD3C2;--g-dou-s:#123430;--g-shi:#F5A962;--g-shi-s:#3A2614;--g-sat:#C4CCD8;--g-sat-s:#2A313C;--review:#C3A0F2;--review-soft:#2E2145;--red-day:#F28B82;--cal-ring:#33466B}
 .stg{display:inline-flex;align-items:center;border-radius:6px;padding:1px 7px;font-size:11.5px;font-weight:700;white-space:nowrap;background:var(--surface-2);color:var(--ink);border:1px solid var(--line)}
 .stg.g-lo{background:var(--g-lo-s);color:var(--g-lo);border-color:transparent}
 .stg.g-gen{background:var(--g-gen-s);color:var(--g-gen);border-color:transparent}
@@ -865,9 +845,7 @@ body{background:var(--surface);overscroll-behavior:none;-webkit-tap-highlight-co
 .rv-ok{border:0;border-radius:10px;background:var(--ok);color:var(--on-accent);font-weight:700;padding:0 12px;height:38px;white-space:nowrap}
 
 /* 登録したときのポップアップ */
-:root{--pop-bg:#E7F6EC;--pop-ink:#157A3C}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--pop-bg:#15321F;--pop-ink:#7DDA9C}}
-:root[data-theme="dark"]{--pop-bg:#15321F;--pop-ink:#7DDA9C}
+:root{--pop-bg:#FFFFFF;--pop-ink:#1E8A33}
 .donepop{position:absolute;left:24px;right:24px;top:50%;transform:translateY(-50%);z-index:8;display:flex;flex-direction:column;align-items:center;gap:14px;padding:28px 18px;border-radius:20px;border:2px solid var(--pop-ink);background:var(--pop-bg);color:var(--pop-ink);box-shadow:0 12px 32px rgba(0,0,0,.28);text-align:center;animation:pop .22s ease-out}
 .donepop b{font-family:var(--font-disp);font-size:17px;line-height:1.5;color:var(--pop-ink)}
 .donepop.sending{border-color:var(--line);background:var(--surface);color:var(--muted)}
@@ -943,3 +921,46 @@ em.late{margin-left:4px}
 /* 読み取ったカットを、ほかの人が先に更新していたとき */
 .sr-conflict{border-top:1px dashed var(--danger);margin-top:6px;padding-top:6px;color:var(--danger);font-size:13px}
 .sr-conflict .row2{margin-top:6px}
+
+/* ===== 案D：白基調・緑・丸ゴシック ===== */
+body{font-size:15px}
+b,strong,h3,h4,h5{font-weight:800}
+.appbar{background:var(--navy);color:var(--navy-ink);border-bottom:0;padding:12px 14px 14px}
+.appbar h3{color:var(--navy-ink);font-size:17px;font-weight:800}
+.appbar .back,.appbar .gear{color:var(--navy-ink)}
+.appbar .op{color:var(--navy-ink)}
+.appbar .op b{color:var(--navy-ink)}
+.body{background:var(--bg)}
+/* ホーム：線で区切った大きいアイコンのマス */
+.body.home{justify-content:flex-start;padding-top:0}
+.hgrid{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line)}
+.hcell{position:relative;border:0;border-bottom:1px solid var(--line);background:var(--surface);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:150px;padding:16px 8px;font-family:var(--font-disp);font-size:15px;font-weight:800;text-align:center;line-height:1.35}
+.hcell:nth-child(even){border-left:1px solid var(--line)}
+.hcell svg{color:var(--accent)}
+.hcell.big{grid-column:1/3;border-left:0;background:var(--accent-soft);min-height:170px;font-size:18px}
+.hcell.big:nth-child(even){border-left:0}
+.hcell .badge{position:absolute;top:12px;right:12px;font-style:normal;font-size:13px;font-weight:800;background:#FDE7C8;color:#8A4B06;border-radius:999px;padding:2px 10px}
+.hrow{display:flex;align-items:center;justify-content:space-between;width:100%;border:0;border-bottom:1px solid var(--line);background:var(--surface);padding:16px;font-family:var(--font-disp);font-size:15px;font-weight:800;color:var(--ink)}
+.hrow span{display:flex;align-items:center;gap:10px}
+.hrow svg{color:var(--accent)}
+.hrow .chev{color:var(--accent);font-size:20px}
+/* 下のタブ */
+.tabbar{flex:0 0 auto;display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);background:var(--surface);padding:6px 0 calc(6px + env(safe-area-inset-bottom,0px))}
+.tabbar button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;font-family:var(--font-ui);font-size:11px;font-weight:500;color:#8A8F8A;padding:4px 0}
+.tabbar button.on{color:var(--accent);font-weight:800}
+/* 大きいボタン：立体の緑 */
+.act{border-radius:14px;font-weight:800}
+.act.sticky,.act.ok{background:#3DB34A;border:0;border-bottom:4px solid #23862F;color:#fff}
+/* 前とあとの状態：丸い札 */
+.sr-flow .was,.sr-flow .now{border-radius:999px;padding:2px 10px;font-weight:800}
+.sr-flow .was{background:#EEF1EE;color:#5A5F5A}
+.sr-flow .now{background:var(--ok-soft);color:var(--ok)}
+.sr-flow .arr{color:var(--accent)}
+/* 登録しました：上に緑の帯・大きなチェック */
+.donepop{border:1px solid var(--line);border-top:16px solid var(--navy);background:#fff;color:var(--pop-ink);box-shadow:0 12px 32px rgba(0,0,0,.18);padding:24px 18px 20px}
+.donepop.ok b{font-size:19px;font-weight:800;color:var(--ink)}
+.donepop .dp-btn{display:inline-block;background:#3DB34A;color:#fff;font-weight:800;border-radius:14px;padding:10px 40px;border-bottom:4px solid #23862F;font-size:16px}
+/* 状態の点：配布待ちは灰、作業中は青、確認待ちはオレンジ、リテイクは赤、完了は緑 */
+.dot.wait{background:#A3A9A3}.dot.in{background:#2F7DE1}.dot.review{background:#F0A030}.dot.retake{background:var(--retake)}.dot.done{background:var(--ok)}
+.ep-tab.on,.chipf.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.seg button.on{background:var(--accent);color:#fff}

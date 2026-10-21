@@ -13,6 +13,7 @@ const ICON = {
   manage:'<rect x="2.5" y="4" width="15" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M2.5 8.5h15M2.5 13h15M7.5 4v14M12.5 4v14" stroke="currentColor" stroke-width="1.3"/><path d="M14.5 20.5l1-3.6 5.4-5.4a1.5 1.5 0 0 1 2.1 2.1l-5.4 5.4-3.1 1.5Z" fill="var(--tile-bg)" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>',
   // ダッシュボード：棒グラフと折れ線
   dash:'<path d="M3 21h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="4.5" y="13" width="3" height="8" rx=".5" fill="currentColor" opacity=".45"/><rect x="10.5" y="10" width="3" height="11" rx=".5" fill="currentColor" opacity=".45"/><rect x="16.5" y="7" width="3" height="14" rx=".5" fill="currentColor" opacity=".45"/><path d="M4 11l6-4 5 3 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="4" cy="11" r="1.5" fill="currentColor"/><circle cx="10" cy="7" r="1.5" fill="currentColor"/><circle cx="15" cy="10" r="1.5" fill="currentColor"/><circle cx="21" cy="4" r="1.5" fill="currentColor"/>',
+  home:'<path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/>',
   me:'<circle cx="12" cy="8.5" r="3.6" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M4.5 20c1.3-3.7 4.2-5.5 7.5-5.5s6.2 1.8 7.5 5.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>',
   x:'<path d="M7 7l10 10M17 7L7 17" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
   rt:'<path d="M9 7H5V3" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.6 7A8 8 0 1 1 4 12" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>',
@@ -30,6 +31,7 @@ function renderPhone(){
   let h = '';
   const V = {home:homeView, scanner:scannerView, review:reviewView, manage:manageView, cut:cutView, dash:dashView, dashEp:dashEpView, settings:settingsView, register:registerView};
   h += (V[ui.screen] || homeView)();
+  if(['home','review','manage','cut','dash','dashEp','settings'].includes(ui.screen)) h += tabBar();
   if(ui.modal) h += `<div class="scrim" data-a="closeModal"></div>` + modalView();
   if(ui.toast) h += `<div class="toast" role="status">${esc(ui.toast)}</div>`;
   if(ui.done) h += doneView();
@@ -46,25 +48,30 @@ function doneView(){
     : d.state==='err' ? `<svg viewBox="0 0 24 24" width="64" height="64" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="currentColor"/><path d="M12 6.5v7M12 17v.5" stroke="var(--pop-bg)" stroke-width="2.6" stroke-linecap="round"/></svg>`
     : `<span class="spin" aria-hidden="true"></span>`;
   const text = d.state==='ok' ? `${d.n}件をスプレッドシートに登録しました！` : d.state==='err' ? `${d.n}件を端末に残しました。つながったら送ります` : `${d.n}件をスプレッドシートに送っています…`;
-  return `<button type="button" class="donepop ${d.state}" data-a="donePopClose" role="status">${icon}<b>${esc(text)}</b></button>`;
+  return `<button type="button" class="donepop ${d.state}" data-a="donePopClose" role="status">${icon}<b>${esc(text)}</b>${d.state==='ok' ? '<span class="dp-btn">閉じる</span>' : ''}</button>`;
 }
 
 /* ---------- ホーム ---------- */
 function homeView(){
   const n = reviewList().length;
-  const tile = (a, icon, label, badge) => `<button type="button" class="tile${a==='scan'?' main':''}" data-a="${a}">${svg(icon, 60)}<b>${label}</b>${badge ? `<em class="badge">${badge}</em>` : ''}</button>`;
+  const cell = (a, icon, label, cls='', badge='') => `<button type="button" class="hcell ${cls}" data-a="${a}">${svg(icon, cls ? 56 : 44)}<span>${label}</span>${badge ? `<em class="badge">${badge}</em>` : ''}</button>`;
   return `<div class="appbar"><h3>カット袋QR</h3>${who()}<button type="button" class="gear" data-a="go" data-to="settings" aria-label="マイページ">${svg('me', 24)}</button></div>
   <div class="body home">
     ${oldDataLine()}${warnLine()}
-    <div class="tiles">
-      ${tile('scan','qr','QRコード読取')}
-      ${tile('goReview','review','回収済カットの確認', n ? n+'件' : '')}
-      ${tile('goManage','manage','進捗表の確認・修正')}
-      ${tile('goDash','dash','制作ダッシュボード')}
+    <div class="hgrid">
+      ${cell('scan','qr','QRコードを読む','big')}
+      ${cell('goReview','review','回収したカット<br>の確認','', n ? n+'件' : '')}
+      ${cell('goManage','manage','進捗表を<br>見る・直す')}
     </div>
+    <button type="button" class="hrow" data-a="goDash"><span>${svg('dash', 26)}制作ダッシュボード</span><b class="chev">›</b></button>
   </div>`;
 }
-
+// 下のタブ（ホーム・読み取り・進捗表・マイページ）
+function tabBar(){
+  const s = ui.screen;
+  const t = (attrs, icon, label, on) => `<button type="button" class="${on?'on':''}" ${attrs}>${svg(icon, 22)}${label}</button>`;
+  return `<nav class="tabbar">${t('data-a="go" data-to="home"', 'home', 'ホーム', s==='home')}${t('data-a="scan"', 'qr', '読み取り', false)}${t('data-a="goManage"', 'manage', '進捗表', s==='manage'||s==='cut')}${t('data-a="go" data-to="settings"', 'me', 'マイページ', s==='settings')}</nav>`;
+}
 /* ---------- QRコード読み取り ---------- */
 // 読み取った1件ずつの行。配布は相手と納期を同じ行で直せる
 function scanRow(it){
