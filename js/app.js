@@ -299,6 +299,7 @@ async function boot(){
 }
 
 /* ---------- マイページ ---------- */
+const GAS_WANT = 4;   // このアプリが使う書き込み口（gas/Code.gs）の版
 // 制作の方が入れるのは、名前と所属だけ。通知は進行が手を打つものを出す。デモ用に、スプレッドシートの初期化をデバッグの欄に置く
 const isAdmin = () => /admin/.test(location.hash + location.search);
 function settingsView(){
@@ -313,6 +314,7 @@ function settingsView(){
     </section>
     <section class="home-sec"><h5>デバッグ（${esc(titleOf() || pr.name)}）</h5>
       <p class="mnote">カット ${s.cuts.length}件・QR ${s.qrs.filter(q=>q.status==='active').length}件・履歴 ${s.events.length}件</p>
+      ${pr.endpoint && PJ[cfg.current].sync.at && (PJ[cfg.current].gasV||0) < GAS_WANT ? `<p class="sync-line bad">スプレッドシートの書き込み口（Apps Script）が前の版です（版 ${PJ[cfg.current].gasV||'1〜2'}）。gas/Code.gs を貼り替えてデプロイし、setupEditTrigger を実行してください。日報の10分ごとの更新・ほかの人の更新の取り込みは、そのあとで動きます</p>` : ''}
       ${(PJ[cfg.current].times||[]).length ? `<p class="mnote">スプレッドシートでかかった時間（秒）：${PJ[cfg.current].times.map(t=>`${fDT(t.at)} 待ち ${(t.lock/1000).toFixed(1)}・元データ ${((t.raw||0)/1000).toFixed(1)}・表 ${((t.sheets||0)/1000).toFixed(1)}`).join('／')}</p>` : ''}
       ${ui.confirmReset
         ? `<div class="confirm"><span>${esc(pr.name)} のスプレッドシートを、デモの初期データに作り直します。読み取った内容は消えます。</span><div class="row"><button class="btn" data-a="resetNo">やめる</button><button class="btn primary" data-a="resetYes">初期化する</button></div></div>`
