@@ -58,19 +58,19 @@ function homeView(){
   return `<div class="appbar"><h3>カット袋QR</h3>${who()}<button type="button" class="gear" data-a="go" data-to="settings" aria-label="マイページ">${svg('me', 24)}</button></div>
   <div class="body home">
     ${oldDataLine()}${warnLine()}
-    <div class="hgrid">
+    <div class="hwrap"><div class="hgrid">
       ${cell('scan','qr','QRコードを読む','big')}
       ${cell('goReview','review','回収したカット<br>の確認','', n ? n+'件' : '')}
       ${cell('goManage','manage','進捗表を<br>見る・直す')}
     </div>
-    <button type="button" class="hrow" data-a="goDash"><span>${svg('dash', 26)}制作ダッシュボード</span><b class="chev">›</b></button>
+    <button type="button" class="hrow" data-a="goDash"><span>${svg('dash', 26)}制作ダッシュボード</span><b class="chev">›</b></button></div>
   </div>`;
 }
-// 下のタブ（ホーム・読み取り・進捗表・マイページ）
+// 下のタブ（ホーム・マイページ）
 function tabBar(){
   const s = ui.screen;
   const t = (attrs, icon, label, on) => `<button type="button" class="${on?'on':''}" ${attrs}>${svg(icon, 22)}${label}</button>`;
-  return `<nav class="tabbar">${t('data-a="go" data-to="home"', 'home', 'ホーム', s==='home')}${t('data-a="scan"', 'qr', '読み取り', false)}${t('data-a="goManage"', 'manage', '進捗表', s==='manage'||s==='cut')}${t('data-a="go" data-to="settings"', 'me', 'マイページ', s==='settings')}</nav>`;
+  return `<nav class="tabbar">${t('data-a="go" data-to="home"', 'home', 'ホーム', s!=='settings')}${t('data-a="go" data-to="settings"', 'me', 'マイページ', s==='settings')}</nav>`;
 }
 /* ---------- QRコード読み取り ---------- */
 // 読み取った1件ずつの行。配布は相手と納期を同じ行で直せる
@@ -248,6 +248,7 @@ function dashView(){
     <section class="dash-card"><h5>担当者別の手持ち</h5>
       <div class="seg two"><button type="button" class="${tab==='staff'?'on':''}" data-dash-tab="staff">制作進行</button><button type="button" class="${tab==='work'?'on':''}" data-dash-tab="work">作画・チェック</button></div>
       <ul class="hold">${tab==='staff' ? staffRows : workRows}</ul></section>
+    <section class="dash-card"><h5>日報・週次UP数（スプレッドシート）<small>10分ごとに自動で更新します</small></h5>${reportBtn()}</section>
   </div>`;
 }
 // 話数の詳細：工程ごとのカット数（配布待ち・作業中・確認待ち）と、各カットの状態

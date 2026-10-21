@@ -19,10 +19,10 @@ function withS(s, fn){ const keep = S; S = s; try{ return fn(); } finally { S = 
 
 /* ---------- Google スプレッドシート（Apps Script）との通信 ---------- */
 let API_TIMEOUT = 60000;
-async function api(p, action, payload={}){
+async function api(p, action, payload={}, wait=API_TIMEOUT){
   if(!p.endpoint) throw new Error('書き込み先が設定されていません');
   // Google 側が返事を返さずに止まることがある。60秒たったら届いていない扱いにして、送り直す（同じものを送り直しても重ならない）
-  const ac = new AbortController(), timer = setTimeout(()=>ac.abort(), API_TIMEOUT);
+  const ac = new AbortController(), timer = setTimeout(()=>ac.abort(), wait);
   let j = null;
   try{
     const res = await fetch(p.endpoint, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({action, key:p.key||'', ...payload}), redirect:'follow', signal:ac.signal});
@@ -298,8 +298,26 @@ async function boot(){
   for(const p of cfg.projects) if(p.endpoint) await reload(p.id, true);
 }
 
+/* ---------- 日報・週次UP数を今すぐ更新 ---------- */
+// 10分ごとの更新を待たずに、1回分を動かす（シートを新しく作るのは1回に1枚。作る回は1分ほどかかる）
+async function runReports(){
+  const pr = curProj(), p = PJ[cfg.current];
+  if(!pr || !pr.endpoint){ flashToast('スプレッドシートにつながっていません'); return; }
+  if((p.gasV||0) < 5){ flashToast('書き込み口（Apps Script）を新しい版にすると使えます'); return; }
+  ui.reporting = true; renderPhone();
+  try{
+    const j = await api(pr, 'runReports', {}, 6*60000);
+    p.reportsRun = {at:Date.now(), ...j};
+    flashToast(j.busy ? '前の更新がまだ動いています。少し待ってからもう一度押してください'
+      : j.noTemplate ? '日報の型をまだ預けていません。少し待ってからもう一度押してください'
+      : `日報を更新しました（${(j.ms/1000).toFixed(0)}秒${j.made.length ? `・${j.made.join('・')} を作成` : ''}${j.left ? `・あと${j.left}枚` : ''}）`);
+  }catch(err){ flashToast(err.message); }
+  ui.reporting = false; renderPhone();
+}
+const reportBtn = () => `<button type="button" class="act ghost" data-a="runReports"${ui.reporting ? ' disabled' : ''}>${ui.reporting ? '日報を更新しています…（1分ほど）' : '日報・週次UP数を今すぐ更新'}</button>`;
+
 /* ---------- マイページ ---------- */
-const GAS_WANT = 4;   // このアプリが使う書き込み口（gas/Code.gs）の版
+const GAS_WANT = 5;   // このアプリが使う書き込み口（gas/Code.gs）の版
 // 制作の方が入れるのは、名前と所属だけ。通知は進行が手を打つものを出す。デモ用に、スプレッドシートの初期化をデバッグの欄に置く
 const isAdmin = () => /admin/.test(location.hash + location.search);
 function settingsView(){
@@ -319,6 +337,7 @@ function settingsView(){
       ${ui.confirmReset
         ? `<div class="confirm"><span>${esc(pr.name)} のスプレッドシートを、デモの初期データに作り直します。読み取った内容は消えます。</span><div class="row"><button class="btn" data-a="resetNo">やめる</button><button class="btn primary" data-a="resetYes">初期化する</button></div></div>`
         : `<button type="button" class="act ghost" data-a="resetAsk">スプレッドシートを初期化する</button>`}
+      ${reportBtn()}
       ${isAdmin() ? `<button type="button" class="act ghost" data-a="print">QRコードを印刷する</button>` : ''}
     </section>
     ${ui.busy ? `<p class="sync-line">${esc(ui.busy)}</p>` : ''}
@@ -392,6 +411,7 @@ function appAction(a, t){
   if(a==='opSave'){ cfg.operator = $('#cfgOp').value.trim() || OPERATOR; cfg.org = $('#cfgOrg').value.trim(); OPERATOR = cfg.operator; saveCfg(); flashToast('保存しました'); return true; }
   if(a==='pjPick'){ ui.modal = 'pj'; renderPhone(); return true; }
   if(a==='warnShow'){ ui.modal = 'warn'; renderPhone(); return true; }
+  if(a==='runReports'){ runReports(); return true; }
   if(a==='warnClear'){ const p = PJ[cfg.current]; p.warnings = (p.warnings||[]).filter(w=>w.kind!=='change'); ui.modal = null; renderPhone(); api(curProj(), 'clearWarn').catch(()=>{}); return true; }
   if(a==='print'){ location.href = 'print.html'; return true; }
   if(a==='resetAsk'){ ui.confirmReset = true; renderPhone(); return true; }

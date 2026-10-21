@@ -964,3 +964,12 @@ b,strong,h3,h4,h5{font-weight:800}
 .dot.wait{background:#A3A9A3}.dot.in{background:#2F7DE1}.dot.review{background:#F0A030}.dot.retake{background:var(--retake)}.dot.done{background:var(--ok)}
 .ep-tab.on,.chipf.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .seg button.on{background:var(--accent);color:#fff}
+
+/* ホーム：3つのまとまりを画面の真ん中に、大きく */
+.body.home{justify-content:center;padding-top:12px;padding-bottom:12px}
+.hwrap{border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--surface)}
+.hwrap .hgrid{border-top:0}
+.hwrap .hcell.big{min-height:190px}
+.hwrap .hcell{min-height:160px}
+.hwrap .hrow{border-bottom:0;padding:20px 18px}
+.tabbar{grid-template-columns:repeat(2,1fr)}
